@@ -1,6 +1,6 @@
 import express from 'express';
 import pool from '../config/database.js';
-import { authenticateToken } from '../middlewares/auth.js';
+import { authenticateToken, requireRole } from '../middlewares/auth.js';
 
 const router = express.Router();
 
@@ -18,8 +18,11 @@ router.get('/token/:electionId', authenticateToken, async (req, res) => {
             [parseInt(electionId)]
         );
 
-        if (electionRows.length === 0 || !electionRows[0].is_active) {
-            return res.status(400).json({ message: "Cette élection n'est pas active" });
+        if (electionRows.length === 0 || !electionRows[0].isActive) {
+            return res.status(400).json({
+                success: false,
+                message: "Cette élection n'est pas active"
+            });
         }
 
         const election = electionRows[0];
@@ -28,12 +31,15 @@ router.get('/token/:electionId', authenticateToken, async (req, res) => {
         const [userRows] = await connection.execute(`
             SELECT u.*, e.* 
             FROM users u
-            LEFT JOIN etudiants e ON u.id = e.user_id
+            LEFT JOIN etudiants e ON u.id = e.userId
             WHERE u.id = ?
         `, [userId]);
 
-        if (userRows.length === 0 || !userRows[0].user_id) {
-            return res.status(403).json({ message: 'Accès refusé - profil étudiant incomplet' });
+        if (userRows.length === 0 || !userRows[0].id) {
+            return res.status(403).json({
+                success: false,
+                message: 'Accès refusé - profil étudiant incomplet'
+            });
         }
 
         const etudiant = userRows[0];
@@ -41,6 +47,7 @@ router.get('/token/:electionId', authenticateToken, async (req, res) => {
         // Vérifier l'éligibilité
         if (!isEligibleForElection(etudiant, election)) {
             return res.status(403).json({
+                success: false,
                 message: 'Vous n\'êtes pas éligible pour cette élection'
             });
         }
@@ -48,7 +55,7 @@ router.get('/token/:electionId', authenticateToken, async (req, res) => {
         // Chercher un jeton de vote existant
         const [tokenRows] = await connection.execute(`
             SELECT * FROM vote_tokens 
-            WHERE user_id = ? AND election_id = ? AND used = FALSE AND expires_at > NOW()
+            WHERE userId = ? AND electionId = ? AND isUsed = FALSE AND expiresAt > NOW()
         `, [userId, parseInt(electionId)]);
 
         let voteToken;
@@ -57,7 +64,7 @@ router.get('/token/:electionId', authenticateToken, async (req, res) => {
         } else {
             // Créer un nouveau jeton de vote
             const [result] = await connection.execute(`
-                INSERT INTO vote_tokens (user_id, election_id, token, used, expires_at, created_at)
+                INSERT INTO vote_tokens (userId, electionId, token, isUsed, expiresAt, createdAt)
                 VALUES (?, ?, UUID(), FALSE, DATE_ADD(NOW(), INTERVAL 1 HOUR), NOW())
             `, [userId, parseInt(electionId)]);
 
@@ -69,32 +76,41 @@ router.get('/token/:electionId', authenticateToken, async (req, res) => {
         }
 
         res.json({
-            token: voteToken.token,
-            expiresAt: voteToken.expires_at,
-            election: {
-                id: election.id,
-                titre: election.titre,
-                type: election.type
+            success: true,
+            data: {
+                token: voteToken.token,
+                expiresAt: voteToken.expiresAt,
+                election: {
+                    id: election.id,
+                    titre: election.titre,
+                    type: election.type
+                }
             }
         });
 
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Erreur serveur' });
+        console.error('Erreur récupération token:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
 // Soumettre un vote avec calcul du poids
-router.post('/', async (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
         const { electionId, candidateId, voteToken } = req.body;
+        const userId = req.user.id;
 
         if (!electionId || !candidateId || !voteToken) {
             return res.status(400).json({
+                success: false,
                 message: 'ElectionId, CandidateId et VoteToken requis'
             });
         }
@@ -102,15 +118,25 @@ router.post('/', async (req, res) => {
         // Valider le jeton de vote
         const [tokenRows] = await connection.execute(`
             SELECT * FROM vote_tokens 
-            WHERE token = ? AND election_id = ? AND used = FALSE AND expires_at > NOW()
+            WHERE token = ? AND electionId = ? AND isUsed = FALSE AND expiresAt > NOW()
         `, [voteToken, parseInt(electionId)]);
 
         if (tokenRows.length === 0) {
-            return res.status(400).json({ message: 'Jeton de vote invalide ou expiré' });
+            return res.status(400).json({
+                success: false,
+                message: 'Jeton de vote invalide ou expiré'
+            });
         }
 
         const validatedToken = tokenRows[0];
-        const userId = validatedToken.user_id;
+
+        // Vérifier que le token appartient à l'utilisateur
+        if (validatedToken.userId !== userId) {
+            return res.status(403).json({
+                success: false,
+                message: 'Jeton de vote non autorisé'
+            });
+        }
 
         // Vérifier que l'élection est active
         const [electionRows] = await connection.execute(
@@ -118,8 +144,11 @@ router.post('/', async (req, res) => {
             [parseInt(electionId)]
         );
 
-        if (electionRows.length === 0 || !electionRows[0].is_active) {
-            return res.status(400).json({ message: "Cette élection n'est pas active" });
+        if (electionRows.length === 0 || !electionRows[0].isActive) {
+            return res.status(400).json({
+                success: false,
+                message: "Cette élection n'est pas active"
+            });
         }
 
         const election = electionRows[0];
@@ -127,21 +156,27 @@ router.post('/', async (req, res) => {
         // Vérifier si l'utilisateur a déjà voté
         const [voteRows] = await connection.execute(`
             SELECT * FROM votes 
-            WHERE user_id = ? AND election_id = ?
+            WHERE userId = ? AND electionId = ?
         `, [userId, parseInt(electionId)]);
 
         if (voteRows.length > 0) {
-            return res.status(400).json({ message: 'Vous avez déjà voté pour cette élection' });
+            return res.status(400).json({
+                success: false,
+                message: 'Vous avez déjà voté pour cette élection'
+            });
         }
 
         // Vérifier que le candidat existe pour cette élection
         const [candidateRows] = await connection.execute(
-            'SELECT * FROM candidates WHERE id = ? AND election_id = ?',
+            'SELECT * FROM candidates WHERE id = ? AND electionId = ?',
             [parseInt(candidateId), parseInt(electionId)]
         );
 
         if (candidateRows.length === 0) {
-            return res.status(400).json({ message: 'Candidat invalide pour cette élection' });
+            return res.status(400).json({
+                success: false,
+                message: 'Candidat invalide pour cette élection'
+            });
         }
 
         // Calculer le poids du vote
@@ -149,23 +184,30 @@ router.post('/', async (req, res) => {
 
         // Enregistrer le vote
         await connection.execute(`
-            INSERT INTO votes (user_id, election_id, candidate_id, poids_vote, created_at)
+            INSERT INTO votes (userId, electionId, candidateId, poidsVote, createdAt)
             VALUES (?, ?, ?, ?, NOW())
         `, [userId, parseInt(electionId), parseInt(candidateId), poidsVote]);
 
         // Marquer le jeton comme utilisé
         await connection.execute(
-            'UPDATE vote_tokens SET used = TRUE, used_at = NOW() WHERE id = ?',
+            'UPDATE vote_tokens SET isUsed = TRUE, usedAt = NOW() WHERE id = ?',
             [validatedToken.id]
         );
 
-        res.json({ message: 'Vote enregistré avec succès' });
+        res.json({
+            success: true,
+            message: 'Vote enregistré avec succès'
+        });
 
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Erreur serveur' });
+        console.error('Erreur enregistrement vote:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
@@ -175,9 +217,9 @@ async function calculateVoteWeight(connection, userId, election) {
         // Vérifier si l'utilisateur est un responsable de salle
         const [responsableRows] = await connection.execute(`
             SELECT rs.* 
-            FROM responsable_salle rs
-            LEFT JOIN etudiants e ON rs.etudiant_id = e.id
-            WHERE e.user_id = ? 
+            FROM responsables_salle rs
+            LEFT JOIN etudiants e ON rs.etudiantId = e.id
+            WHERE e.userId = ? 
             AND (? IS NULL OR rs.filiere = ?)
             AND (? IS NULL OR rs.annee = ?)
             AND (? IS NULL OR rs.ecole = ?)
@@ -215,7 +257,10 @@ router.get('/results/:electionId', async (req, res) => {
         );
 
         if (electionRows.length === 0) {
-            return res.status(404).json({ message: 'Élection non trouvée' });
+            return res.status(404).json({
+                success: false,
+                message: 'Élection non trouvée'
+            });
         }
 
         const election = electionRows[0];
@@ -224,23 +269,23 @@ router.get('/results/:electionId', async (req, res) => {
         const [candidateRows] = await connection.execute(`
             SELECT c.*, u.email, e.nom, e.prenom
             FROM candidates c
-            LEFT JOIN users u ON c.user_id = u.id
-            LEFT JOIN etudiants e ON u.id = e.user_id
-            WHERE c.election_id = ?
+            LEFT JOIN users u ON c.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            WHERE c.electionId = ?
         `, [parseInt(electionId)]);
 
         // Récupérer les votes
         const [voteRows] = await connection.execute(`
             SELECT v.*, u.email, e.nom, e.prenom
             FROM votes v
-            LEFT JOIN users u ON v.user_id = u.id
-            LEFT JOIN etudiants e ON u.id = e.user_id
-            WHERE v.election_id = ?
+            LEFT JOIN users u ON v.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            WHERE v.electionId = ?
         `, [parseInt(electionId)]);
 
         // Récupérer le nombre total de jetons
         const [tokenCountRows] = await connection.execute(
-            'SELECT COUNT(*) as count FROM vote_tokens WHERE election_id = ?',
+            'SELECT COUNT(*) as count FROM vote_tokens WHERE electionId = ?',
             [parseInt(electionId)]
         );
 
@@ -248,16 +293,16 @@ router.get('/results/:electionId', async (req, res) => {
 
         // Calcul des résultats avec pondération
         const resultats = candidateRows.map(candidate => {
-            const votes = voteRows.filter(vote => vote.candidate_id === candidate.id);
+            const votes = voteRows.filter(vote => vote.candidateId === candidate.id);
 
             // Calcul du score pondéré
             let scorePondere = 0;
             votes.forEach(vote => {
-                scorePondere += vote.poids_vote || 1.0;
+                scorePondere += vote.poidsVote || 1.0;
             });
 
             // Pourcentage basé sur le total des poids de votes
-            const totalPoids = voteRows.reduce((sum, vote) => sum + (vote.poids_vote || 1.0), 0);
+            const totalPoids = voteRows.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
             const pourcentage = totalPoids > 0 ? (scorePondere / totalPoids) * 100 : 0;
 
             return {
@@ -277,39 +322,46 @@ router.get('/results/:electionId', async (req, res) => {
         resultats.sort((a, b) => b.scoreFinal - a.scoreFinal);
 
         const response = {
-            election: {
-                id: election.id,
-                titre: election.titre,
-                type: election.type,
-                ecole: election.ecole,
-                filiere: election.filiere,
-                annee: election.annee,
-                dateDebut: election.date_debut,
-                dateFin: election.date_fin,
-                isActive: election.is_active
-            },
-            statistiques: {
-                totalVotes: voteRows.length,
-                totalPoids: voteRows.reduce((sum, vote) => sum + (vote.poids_vote || 1.0), 0),
-                totalInscrits: totalInscrits,
-                tauxParticipation: totalInscrits > 0
-                    ? parseFloat(((voteRows.length / totalInscrits) * 100).toFixed(2))
-                    : 0
-            },
-            resultats: resultats
+            success: true,
+            data: {
+                election: {
+                    id: election.id,
+                    titre: election.titre,
+                    type: election.type,
+                    ecole: election.ecole,
+                    filiere: election.filiere,
+                    annee: election.annee,
+                    dateDebut: election.dateDebut,
+                    dateFin: election.dateFin,
+                    isActive: election.isActive
+                },
+                statistiques: {
+                    totalVotes: voteRows.length,
+                    totalPoids: voteRows.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0),
+                    totalInscrits: totalInscrits,
+                    tauxParticipation: totalInscrits > 0
+                        ? parseFloat(((voteRows.length / totalInscrits) * 100).toFixed(2))
+                        : 0
+                },
+                resultats: resultats
+            }
         };
 
         res.json(response);
     } catch (error) {
         console.error('Erreur calcul résultats:', error);
-        res.status(500).json({ message: 'Erreur serveur' });
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
 // Récupérer les résultats détaillés avec séparation responsables/étudiants
-router.get('/results-detailed/:electionId', async (req, res) => {
+router.get('/results-detailed/:electionId', requireRole('ADMIN'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
@@ -322,7 +374,10 @@ router.get('/results-detailed/:electionId', async (req, res) => {
         );
 
         if (electionRows.length === 0) {
-            return res.status(404).json({ message: 'Élection non trouvée' });
+            return res.status(404).json({
+                success: false,
+                message: 'Élection non trouvée'
+            });
         }
 
         const election = electionRows[0];
@@ -331,9 +386,9 @@ router.get('/results-detailed/:electionId', async (req, res) => {
         const [candidateRows] = await connection.execute(`
             SELECT c.*, u.email, e.nom, e.prenom
             FROM candidates c
-            LEFT JOIN users u ON c.user_id = u.id
-            LEFT JOIN etudiants e ON u.id = e.user_id
-            WHERE c.election_id = ?
+            LEFT JOIN users u ON c.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            WHERE c.electionId = ?
         `, [parseInt(electionId)]);
 
         // Récupérer les votes avec information des responsables
@@ -345,13 +400,13 @@ router.get('/results-detailed/:electionId', async (req, res) => {
                 e.prenom,
                 CASE WHEN rs.id IS NOT NULL THEN TRUE ELSE FALSE END as is_responsable
             FROM votes v
-            LEFT JOIN users u ON v.user_id = u.id
-            LEFT JOIN etudiants e ON u.id = e.user_id
-            LEFT JOIN responsable_salle rs ON e.id = rs.etudiant_id
+            LEFT JOIN users u ON v.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            LEFT JOIN responsables_salle rs ON e.id = rs.etudiantId
                 AND (? IS NULL OR rs.filiere = ?)
                 AND (? IS NULL OR rs.annee = ?)
                 AND (? IS NULL OR rs.ecole = ?)
-            WHERE v.election_id = ?
+            WHERE v.electionId = ?
         `, [
             election.filiere, election.filiere,
             election.annee, election.annee,
@@ -361,7 +416,7 @@ router.get('/results-detailed/:electionId', async (req, res) => {
 
         // Récupérer le nombre total de jetons
         const [tokenCountRows] = await connection.execute(
-            'SELECT COUNT(*) as count FROM vote_tokens WHERE election_id = ?',
+            'SELECT COUNT(*) as count FROM vote_tokens WHERE electionId = ?',
             [parseInt(electionId)]
         );
 
@@ -378,7 +433,7 @@ router.get('/results-detailed/:electionId', async (req, res) => {
                 resultats[candidate.id] = 0;
             });
             votes.forEach(vote => {
-                resultats[vote.candidate_id] = (resultats[vote.candidate_id] || 0) + (vote.poids_vote || 1.0);
+                resultats[vote.candidateId] = (resultats[vote.candidateId] || 0) + (vote.poidsVote || 1.0);
             });
             return resultats;
         };
@@ -386,8 +441,8 @@ router.get('/results-detailed/:electionId', async (req, res) => {
         const votesParCandidatResponsables = calculerVotes(votesResponsables);
         const votesParCandidatEtudiants = calculerVotes(votesEtudiants);
 
-        const totalVotesResponsables = votesResponsables.reduce((sum, vote) => sum + (vote.poids_vote || 1.0), 0);
-        const totalVotesEtudiants = votesEtudiants.reduce((sum, vote) => sum + (vote.poids_vote || 1.0), 0);
+        const totalVotesResponsables = votesResponsables.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
+        const totalVotesEtudiants = votesEtudiants.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
 
         // Calcul des résultats pondérés (60/40)
         const resultatsPonderes = candidateRows.map(candidate => {
@@ -422,37 +477,44 @@ router.get('/results-detailed/:electionId', async (req, res) => {
         resultatsPonderes.sort((a, b) => b.scoreFinal - a.scoreFinal);
 
         const response = {
-            election: {
-                id: election.id,
-                titre: election.titre,
-                type: election.type,
-                ecole: election.ecole,
-                filiere: election.filiere,
-                annee: election.annee,
-                dateDebut: election.date_debut,
-                dateFin: election.date_fin,
-                isActive: election.is_active
-            },
-            statistiques: {
-                totalVotes: voteRows.length,
-                votesResponsables: votesResponsables.length,
-                votesEtudiants: votesEtudiants.length,
-                totalPoidsResponsables: totalVotesResponsables,
-                totalPoidsEtudiants: totalVotesEtudiants,
-                totalInscrits: totalInscrits,
-                tauxParticipation: totalInscrits > 0
-                    ? parseFloat(((voteRows.length / totalInscrits) * 100).toFixed(2))
-                    : 0
-            },
-            resultats: resultatsPonderes
+            success: true,
+            data: {
+                election: {
+                    id: election.id,
+                    titre: election.titre,
+                    type: election.type,
+                    ecole: election.ecole,
+                    filiere: election.filiere,
+                    annee: election.annee,
+                    dateDebut: election.dateDebut,
+                    dateFin: election.dateFin,
+                    isActive: election.isActive
+                },
+                statistiques: {
+                    totalVotes: voteRows.length,
+                    votesResponsables: votesResponsables.length,
+                    votesEtudiants: votesEtudiants.length,
+                    totalPoidsResponsables: totalVotesResponsables,
+                    totalPoidsEtudiants: totalVotesEtudiants,
+                    totalInscrits: totalInscrits,
+                    tauxParticipation: totalInscrits > 0
+                        ? parseFloat(((voteRows.length / totalInscrits) * 100).toFixed(2))
+                        : 0
+                },
+                resultats: resultatsPonderes
+            }
         };
 
         res.json(response);
     } catch (error) {
         console.error('Erreur calcul résultats détaillés:', error);
-        res.status(500).json({ message: 'Erreur serveur' });
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
@@ -466,18 +528,25 @@ router.get('/status/:electionId', authenticateToken, async (req, res) => {
 
         const [voteRows] = await connection.execute(`
             SELECT * FROM votes 
-            WHERE user_id = ? AND election_id = ?
+            WHERE userId = ? AND electionId = ?
         `, [userId, parseInt(electionId)]);
 
         res.json({
-            hasVoted: voteRows.length > 0,
-            electionId: parseInt(electionId)
+            success: true,
+            data: {
+                hasVoted: voteRows.length > 0,
+                electionId: parseInt(electionId)
+            }
         });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Erreur serveur' });
+        console.error('Erreur vérification statut vote:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
@@ -487,34 +556,54 @@ router.post('/validate-token', authenticateToken, async (req, res) => {
     try {
         connection = await pool.getConnection();
         const { electionId, voteToken } = req.body;
+        const userId = req.user.id;
 
         if (!electionId || !voteToken) {
             return res.status(400).json({
+                success: false,
                 message: 'ElectionId et voteToken requis'
             });
         }
 
         const [tokenRows] = await connection.execute(`
             SELECT * FROM vote_tokens 
-            WHERE token = ? AND election_id = ? AND used = FALSE AND expires_at > NOW()
+            WHERE token = ? AND electionId = ? AND isUsed = FALSE AND expiresAt > NOW()
         `, [voteToken, parseInt(electionId)]);
 
         if (tokenRows.length === 0) {
             return res.status(400).json({
+                success: false,
                 message: 'Jeton de vote invalide ou expiré',
                 valid: false
             });
         }
 
+        // Vérifier que le token appartient à l'utilisateur
+        if (tokenRows[0].userId !== userId) {
+            return res.status(403).json({
+                success: false,
+                message: 'Jeton de vote non autorisé',
+                valid: false
+            });
+        }
+
         res.json({
-            valid: true,
-            expiresAt: tokenRows[0].expires_at
+            success: true,
+            data: {
+                valid: true,
+                expiresAt: tokenRows[0].expiresAt
+            }
         });
     } catch (error) {
         console.error('Erreur validation token:', error);
-        res.status(500).json({ message: 'Erreur serveur', valid: false });
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur',
+            valid: false,
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
