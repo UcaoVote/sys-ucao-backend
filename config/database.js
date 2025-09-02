@@ -67,5 +67,4 @@ export async function query(sql, params = []) {
     }
 }
 
-export { pool };
 export default pool;
