@@ -21,7 +21,7 @@ const JWT_EXPIRES_NORMAL = '8h';
 const JWT_EXPIRES_TEMP = '1h';
 
 // POST /auth/login
-router.post('/login', async (req, res) => {
+router.post('/', async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
