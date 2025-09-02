@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import prisma from './prisma.js'
+import pool from './database.js'; // Import du pool MySQL
 
 // Import des routes
 import notificationRoutes from './routes/notifications.js';
@@ -22,10 +22,6 @@ import userRegisterRouter from './routes/userRegister.js';
 import matriculesRouter from './routes/matricules.js';
 import codesRouter from './routes/codes.js';
 import statsRouter from './routes/stats.js';
-
-
-
-
 
 // Configuration
 dotenv.config();
@@ -51,12 +47,17 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ==================== ROUTE HEALTH CHECK ====================
 app.get('/api/health', async (req, res) => {
+    let connection;
     try {
-        await prisma.$queryRaw`SELECT 1`; // Vérifie la connexion DB
+        // Vérifie la connexion DB avec MySQL
+        connection = await pool.getConnection();
+        await connection.query('SELECT 1');
+
         res.status(200).json({
             status: 'OK',
             message: 'Service is healthy',
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            database: 'MySQL connected'
         });
     } catch (error) {
         res.status(503).json({
@@ -64,6 +65,8 @@ app.get('/api/health', async (req, res) => {
             message: 'Database not reachable',
             details: error.message
         });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
@@ -87,14 +90,14 @@ app.use('/api/codes', codesRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/activity', activityRouter);
 
-
 // Route de test
 app.get('/api/test', (_req, res) => {
     res.json({
-        message: ' API Vote UCAO opérationnelle',
+        message: 'API Vote UCAO opérationnelle',
         version: '2.0.0',
         timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV || 'development'
+        environment: process.env.NODE_ENV || 'development',
+        database: 'MySQL'
     });
 });
 
@@ -122,8 +125,9 @@ const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || '0.0.0.0';
 
 app.listen(PORT, HOST, () => {
-    console.log(` Serveur Vote UCAO démarré sur http://${HOST}:${PORT}`);
-    console.log(` Mode: ${process.env.NODE_ENV || 'development'}`);
-    console.log(` API disponible sur: http://${HOST}:${PORT}/api`);
-    console.log(` Health check: http://${HOST}:${PORT}/api/health`);
+    console.log(`Serveur Vote UCAO démarré sur http://${HOST}:${PORT}`);
+    console.log(`Mode: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`Base de données: MySQL`);
+    console.log(`API disponible sur: http://${HOST}:${PORT}/api`);
+    console.log(`Health check: http://${HOST}:${PORT}/api/health`);
 });
