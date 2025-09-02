@@ -166,14 +166,14 @@ router.get('/is-candidate/:electionId', authenticateToken, async (req, res) => {
     }
 });
 
-// Récupérer les candidatures de l'étudiant connecté
+// Récupérer les candidatures de l'étudiant connecté 
 router.get('/mes-candidatures', authenticateToken, async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
         const userId = req.user.id;
 
-        // Récupérer les candidatures de l'utilisateur
+        // Récupérer les candidatures de l'utilisateur avec une requête optimisée
         const [candidatureRows] = await connection.execute(`
             SELECT 
                 c.*,
@@ -183,12 +183,10 @@ router.get('/mes-candidatures', authenticateToken, async (req, res) => {
                 el.description as election_description,
                 el.dateDebut as election_dateDebut,
                 el.dateFin as election_dateFin,
-                COUNT(v.id) as votes_count
+                (SELECT COUNT(*) FROM votes v WHERE v.candidateId = c.id) as votes_count
             FROM candidates c
             LEFT JOIN elections el ON c.electionId = el.id
-            LEFT JOIN votes v ON c.id = v.candidateId
             WHERE c.userId = ?
-            GROUP BY c.id
             ORDER BY c.createdAt DESC
         `, [userId]);
 
@@ -217,8 +215,10 @@ router.get('/mes-candidatures', authenticateToken, async (req, res) => {
 
         res.json({
             success: true,
-            candidatures: formattedCandidatures,
-            total: candidatureRows.length
+            data: {
+                candidatures: formattedCandidatures,
+                total: candidatureRows.length
+            }
         });
 
     } catch (error) {
