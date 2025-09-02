@@ -4,7 +4,7 @@ import { authenticateToken, requireRole } from '../middlewares/auth.js';
 
 const router = express.Router();
 
-// Récupérer tous les candidats d'une élection spécifique - VERSION CORRIGÉE
+// Récupérer tous les candidats d'une élection spécifique - VERSION FINALE CORRIGÉE
 router.get('/election/:electionId', authenticateToken, async (req, res) => {
     let connection;
     try {
@@ -24,7 +24,7 @@ router.get('/election/:electionId', authenticateToken, async (req, res) => {
             });
         }
 
-        // Récupérer les candidats approuvés avec la syntaxe CORRIGÉE
+        // Récupérer les candidats approuvés
         const [candidateRows] = await connection.execute(`
             SELECT 
                 c.*,
@@ -44,7 +44,7 @@ router.get('/election/:electionId', authenticateToken, async (req, res) => {
             LEFT JOIN elections el ON c.electionId = el.id
             WHERE c.electionId = ? AND c.statut = 'APPROUVE'
             ORDER BY c.createdAt DESC
-        `, [parseInt(electionId)]);
+        `, [parseInt(electionId)]); // UN SEUL PARAMÈTRE ICI
 
         const formattedCandidates = candidateRows.map(candidate => ({
             id: candidate.id,
@@ -487,27 +487,32 @@ router.put('/:candidateId/programme', authenticateToken, async (req, res) => {
     }
 });
 
-// Liste des candidats avec pagination - VERSION CORRIGÉE
+// Liste des candidats avec pagination - VERSION FINALE CORRIGÉE
 router.get('/', async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
         const { electionId, page = 1, limit = 10 } = req.query;
 
-        // Construction de la clause WHERE
-        let whereClause = '1=1';
-        let params = [];
+        // Construction de la clause WHERE et des paramètres
+        let whereClause = '';
+        let whereParams = [];
 
         if (electionId) {
-            whereClause += ' AND c.electionId = ?';
-            params.push(parseInt(electionId));
+            whereClause = 'WHERE c.electionId = ?';
+            whereParams.push(parseInt(electionId));
+        } else {
+            whereClause = 'WHERE 1=1';
         }
 
         // Pagination
         const offset = (parseInt(page) - 1) * parseInt(limit);
-        const queryParams = [...params, parseInt(limit), offset];
 
-        // REQUÊTE CORRIGÉE : Utiliser une sous-requête pour les counts
+        // Construction des paramètres finaux
+        const queryParams = [...whereParams, parseInt(limit), offset];
+
+        console.log('Params:', queryParams); // Debug
+
         const [candidateRows] = await connection.execute(`
             SELECT 
                 c.*,
@@ -525,18 +530,19 @@ router.get('/', async (req, res) => {
             LEFT JOIN users u ON c.userId = u.id
             LEFT JOIN etudiants e ON u.id = e.userId
             LEFT JOIN elections el ON c.electionId = el.id
-            WHERE ${whereClause}
+            ${whereClause}
             ORDER BY c.nom ASC
             LIMIT ? OFFSET ?
         `, queryParams);
 
-        // Compter le total - REQUÊTE CORRIGÉE
-        const [countRows] = await connection.execute(`
-            SELECT COUNT(*) as total 
-            FROM candidates c
-            WHERE ${whereClause}
-        `, params);
+        // Compter le total
+        const countQuery = electionId
+            ? 'SELECT COUNT(*) as total FROM candidates c WHERE c.electionId = ?'
+            : 'SELECT COUNT(*) as total FROM candidates c';
 
+        const countParams = electionId ? [parseInt(electionId)] : [];
+
+        const [countRows] = await connection.execute(countQuery, countParams);
         const total = countRows[0].total;
         const totalPages = Math.ceil(total / parseInt(limit));
 
