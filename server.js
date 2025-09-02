@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import pool from './database.js'; // Import du pool MySQL
+import pool from './config/database.js';
 
 // Import des routes
 import notificationRoutes from './routes/notifications.js';
