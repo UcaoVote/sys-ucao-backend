@@ -208,7 +208,7 @@ CREATE TABLE notifications (
     message TEXT NOT NULL,
     type VARCHAR(50) NOT NULL,
     priority VARCHAR(20) NOT NULL,
-    read BOOLEAN DEFAULT FALSE,
+    is_read BOOLEAN DEFAULT FALSE,
     relatedEntity VARCHAR(100),
     entityId VARCHAR(50),
     userId VARCHAR(191) NOT NULL,
@@ -216,9 +216,9 @@ CREATE TABLE notifications (
     updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_notification_user FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_notifications_userId (userId),
-    INDEX idx_notifications_read (read),
+    INDEX idx_notifications_read (is_read),
     INDEX idx_notifications_createdAt (createdAt),
-    INDEX idx_notifications_user_read (userId, read),
+    INDEX idx_notifications_user_read (userId, is_read),
     INDEX idx_notifications_type (type),
     INDEX idx_notifications_priority (priority)
 ) ENGINE=InnoDB;

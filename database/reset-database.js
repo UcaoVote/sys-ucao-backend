@@ -1,83 +1,61 @@
-// database/reset-database.js
-import { query } from '../config/database.js';
+import mysql from 'mysql2/promise';
+import readline from 'readline';
 
-async function resetDatabase() {
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+
+rl.question('Cette opération va supprimer toutes les tables. Tape "DETRUIRE" pour confirmer : ', async (answer) => {
+    if (answer !== 'DETRUIRE') {
+        console.log('Opération annulée.');
+        rl.close();
+        return;
+    }
+
+    const connection = await mysql.createConnection({
+        host: process.env.MYSQLHOST,
+        user: process.env.MYSQLUSER,
+        password: process.env.MYSQLPASSWORD,
+        database: process.env.MYSQLDATABASE,
+        port: process.env.MYSQLPORT,
+        waitForConnections: true,
+        connectionLimit: 10,
+
+    });
+
     try {
-        console.log('💥 ATTENTION: Opération TRÈS dangereuse!');
-        console.log('🔻 Ce script va supprimer TOUTES les TABLES de la base de données');
-        console.log('🔻 Toutes les données et structures seront PERDUES');
+        const [rows] = await connection.execute('SHOW TABLES');
+        const tableKey = Object.keys(rows[0])[0];
+        const tables = rows.map(row => row[tableKey]);
 
-        const readline = (await import('readline')).createInterface({
-            input: process.stdin,
-            output: process.stdout
-        });
+        console.log(`${tables.length} tables détectées`);
 
-        const question = (text) => new Promise(resolve => readline.question(text, resolve));
-
-        const confirm = await question('❓ Êtes-vous ABSOLUMENT sûr ? (tapez "DETRUIRE" pour confirmer): ');
-
-        if (confirm !== 'DETRUIRE') {
-            console.log('❌ Opération annulée');
-            readline.close();
-            return;
-        }
-
-        readline.close();
-
-        console.log('\n💥 Début de la destruction...');
-
-        // Désactiver les contraintes
-        await query('SET FOREIGN_KEY_CHECKS = 0;');
-
-        // Lister toutes les tables
-        const tables = await query(`
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_schema = DATABASE() 
-            AND table_type = 'BASE TABLE'
-        `);
-
-        console.log(`📋 ${tables.length} tables à détruire`);
-
-        // Supprimer chaque table
+        let success = 0;
+        let failed = [];
+        await connection.execute('SET FOREIGN_KEY_CHECKS = 0');
         for (const table of tables) {
-            const tableName = table.TABLE_NAME || table.table_name;
             try {
-                await query(`DROP TABLE IF EXISTS ${tableName};`);
-                console.log(`✅ Table ${tableName} supprimée`);
-            } catch (error) {
-                console.log(`⚠️  Impossible de supprimer ${tableName}:`, error.message);
+                await connection.execute(`DROP TABLE IF EXISTS \`${table}\``);
+                console.log(`Table supprimée: ${table}`);
+                success++;
+            } catch (err) {
+                console.log(`Échec suppression: ${table} → ${err.message}`);
+                failed.push(table);
             }
         }
-
-        // Réactiver les contraintes
-        await query('SET FOREIGN_KEY_CHECKS = 1;');
-
-        // Vérification
-        const remainingTables = await query(`
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_schema = DATABASE() 
-            AND table_type = 'BASE TABLE'
-        `);
-
-        console.log(`\n📊 Tables restantes: ${remainingTables.length}`);
-
-        if (remainingTables.length === 0) {
-            console.log('🎉 Base de données complètement resetée!');
+        await connection.execute('SET FOREIGN_KEY_CHECKS = 1');
+        console.log(`\nRésumé : ${success} supprimée(s), ${failed.length} échec(s)`);
+        if (failed.length) {
+            console.log(` Tables non supprimées :\n- ${failed.join('\n- ')}`);
         } else {
-            console.log('⚠️  Certaines tables n\'ont pas pu être supprimées');
+            console.log('Destruction complète réussie.');
         }
 
-    } catch (error) {
-        console.error('❌ Erreur lors de la destruction:', error.message);
+    } catch (err) {
+        console.error('Erreur critique :', err.message);
+    } finally {
+        await connection.end();
+        rl.close();
     }
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-    resetDatabase()
-        .then(() => process.exit(0))
-        .catch(() => process.exit(1));
-}
-
-export default resetDatabase;
+});
