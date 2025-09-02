@@ -1,50 +1,69 @@
 import express from 'express';
-import prisma from '../prisma.js';
+import pool from '../database.js'; // Votre connexion MySQL
 import { authenticateToken, requireAdmin } from '../middlewares/auth.js';
 import { PasswordResetService } from '../services/passwordResetService.js';
 
-
 const router = express.Router();
+
 
 // PUT /api/students/:id/status - Modifier le statut d'un étudiant
 router.put('/:id/status', authenticateToken, requireAdmin, async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { id } = req.params;
         const { actif } = req.body;
 
         // Vérifier que l'étudiant existe
-        const etudiant = await prisma.etudiant.findUnique({
-            where: { id: parseInt(id) },
-            include: { user: true }
-        });
+        const [etudiantRows] = await db.execute(
+            `SELECT e.*, u.id as userId, u.actif as userActif 
+             FROM etudiants e 
+             LEFT JOIN users u ON e.userId = u.id 
+             WHERE e.id = ?`,
+            [parseInt(id)]
+        );
 
-        if (!etudiant || !etudiant.userId) {
+        if (etudiantRows.length === 0 || !etudiantRows[0].userId) {
             return res.status(404).json({
                 success: false,
                 message: 'Étudiant non trouvé'
             });
         }
 
-        const updatedUser = await prisma.user.update({
-            where: { id: etudiant.userId },
-            data: { actif },
-            include: {
-                etudiant: {
-                    select: {
-                        id: true,
-                        nom: true,
-                        prenom: true,
-                        filiere: true,
-                        annee: true
-                    }
-                }
-            }
-        });
+        const etudiant = etudiantRows[0];
+
+        // Mettre à jour le statut de l'utilisateur
+        await db.execute(
+            'UPDATE users SET actif = ? WHERE id = ?',
+            [actif, etudiant.userId]
+        );
+
+        // Récupérer les informations mises à jour
+        const [updatedUserRows] = await connection.execute(
+            `SELECT u.*, e.id as etudiantId, e.nom, e.prenom, e.filiere, e.annee 
+             FROM users u 
+             LEFT JOIN etudiants e ON u.id = e.userId 
+             WHERE u.id = ?`,
+            [etudiant.userId]
+        );
+
+        const updatedUser = updatedUserRows[0];
 
         return res.json({
             success: true,
             message: `Étudiant ${actif ? 'activé' : 'désactivé'} avec succès`,
-            data: updatedUser
+            data: {
+                id: updatedUser.id,
+                email: updatedUser.email,
+                actif: updatedUser.actif,
+                etudiant: {
+                    id: updatedUser.etudiantId,
+                    nom: updatedUser.nom,
+                    prenom: updatedUser.prenom,
+                    filiere: updatedUser.filiere,
+                    annee: updatedUser.annee
+                }
+            }
         });
     } catch (error) {
         console.error('Error updating student status:', error);
@@ -56,21 +75,15 @@ router.put('/:id/status', authenticateToken, requireAdmin, async (req, res) => {
     }
 });
 
-
-
-
 // POST /api/students/:studentId/reset-access - Réinitialiser accès étudiant
 router.post('/:studentId/reset-access', async (req, res) => {
     try {
         const { studentId } = req.params;
-
-        // ⚠️ Pour l’instant tu n’as pas req.user (si tu n’as pas encore le système JWT), 
-        // donc on met un faux adminId ou null
         const adminId = req.user?.id || null;
 
         const temporaryCredentials = await PasswordResetService.resetStudentAccess(
             adminId,
-            parseInt(studentId) // <= important : ton id d'étudiant est Int en Prisma
+            parseInt(studentId)
         );
 
         return res.json({
@@ -99,150 +112,156 @@ router.post('/:studentId/reset-access', async (req, res) => {
     }
 });
 
-
-
 // Recherche étudiant par matricule
-router.get(
-    '/matricule/:matricule',
-    authenticateToken,
-    requireAdmin,
-    async (req, res) => {
-        try {
-            const { matricule } = req.params;
+router.get('/matricule/:matricule', authenticateToken, requireAdmin, async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const { matricule } = req.params;
 
-            const student = await prisma.etudiant.findUnique({
-                where: { matricule },
-                include: {
-                    user: {
-                        select: {
-                            email: true,
-                            actif: true,
-                            createdAt: true
-                        }
-                    }
-                }
-            });
+        const [studentRows] = await connection.execute(
+            `SELECT e.*, u.email, u.actif, u.createdAt 
+             FROM etudiants e 
+             LEFT JOIN users u ON e.userId = u.id 
+             WHERE e.matricule = ?`,
+            [matricule]
+        );
 
-            if (!student) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Étudiant non trouvé'
-                });
-            }
-
-            return res.json({
-                success: true,
-                data: {
-                    ...student,
-                    status: student.user?.actif ? 'Actif' : 'Inactif'
-                }
-            });
-        } catch (error) {
-            console.error('Erreur recherche étudiant:', error);
-            return res.status(500).json({
+        if (studentRows.length === 0) {
+            return res.status(404).json({
                 success: false,
-                message: 'Erreur lors de la recherche étudiant',
-                error: process.env.NODE_ENV === 'development' ? error.message : undefined
+                message: 'Étudiant non trouvé'
             });
         }
+
+        const student = studentRows[0];
+
+        return res.json({
+            success: true,
+            data: {
+                ...student,
+                status: student.actif ? 'Actif' : 'Inactif'
+            }
+        });
+    } catch (error) {
+        console.error('Erreur recherche étudiant:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la recherche étudiant',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
-);
+});
 
 // Recherche étudiant par code d'inscription
-router.get(
-    '/code/:code',
-    authenticateToken,
-    requireAdmin,
-    async (req, res) => {
-        try {
-            const { code } = req.params;
+router.get('/code/:code', authenticateToken, requireAdmin, async (req, res) => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const { code } = req.params;
 
-            const student = await prisma.etudiant.findUnique({
-                where: { codeInscription: code },
-                include: {
-                    user: {
-                        select: {
-                            email: true,
-                            actif: true,
-                            createdAt: true
-                        }
-                    }
-                }
-            });
+        const [studentRows] = await connection.execute(
+            `SELECT e.*, u.email, u.actif, u.createdAt 
+             FROM etudiants e 
+             LEFT JOIN users u ON e.userId = u.id 
+             WHERE e.codeInscription = ?`,
+            [code]
+        );
 
-            if (!student) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Étudiant non trouvé avec ce code d\'inscription'
-                });
-            }
-
-            return res.json({
-                success: true,
-                data: {
-                    ...student,
-                    status: student.user?.actif ? 'Actif' : 'Inactif'
-                }
-            });
-        } catch (error) {
-            console.error('Erreur recherche étudiant par code:', error);
-            return res.status(500).json({
+        if (studentRows.length === 0) {
+            return res.status(404).json({
                 success: false,
-                message: 'Erreur lors de la recherche étudiant',
-                error: process.env.NODE_ENV === 'development' ? error.message : undefined
+                message: 'Étudiant non trouvé avec ce code d\'inscription'
             });
         }
+
+        const student = studentRows[0];
+
+        return res.json({
+            success: true,
+            data: {
+                ...student,
+                status: student.actif ? 'Actif' : 'Inactif'
+            }
+        });
+    } catch (error) {
+        console.error('Erreur recherche étudiant par code:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la recherche étudiant',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
-);
+});
 
-
-
-// ============================
-// GET /api/students
-// Récupérer tous les étudiants avec pagination et filtres
-// ============================
+// GET /api/students - Récupérer tous les étudiants avec pagination et filtres
 router.get('/', async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { page = 1, limit = 10, filiere, annee, ecole, status, search } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
-        // Filtres de base
-        const where = { user: { role: 'ETUDIANT' } };
+        // Construction de la requête avec filtres
+        let whereConditions = ['u.role = "ETUDIANT"'];
+        let queryParams = [];
 
-        if (status === 'active') where.user.actif = true;
-        if (status === 'inactive') where.user.actif = false;
-        if (filiere) where.filiere = filiere;
-        if (annee) where.annee = parseInt(annee);
-        if (ecole) where.ecole = ecole;
+        if (status === 'active') whereConditions.push('u.actif = true');
+        if (status === 'inactive') whereConditions.push('u.actif = false');
+        if (filiere) {
+            whereConditions.push('e.filiere = ?');
+            queryParams.push(filiere);
+        }
+        if (annee) {
+            whereConditions.push('e.annee = ?');
+            queryParams.push(parseInt(annee));
+        }
+        if (ecole) {
+            whereConditions.push('e.ecole = ?');
+            queryParams.push(ecole);
+        }
         if (search) {
-            where.OR = [
-                { nom: { contains: search, mode: 'insensitive' } },
-                { prenom: { contains: search, mode: 'insensitive' } },
-                { identifiantTemporaire: { contains: search, mode: 'insensitive' } },
-                { matricule: { contains: search, mode: 'insensitive' } }
-            ];
+            whereConditions.push(`(e.nom LIKE ? OR e.prenom LIKE ? OR e.identifiantTemporaire LIKE ? OR e.matricule LIKE ?)`);
+            queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
         }
 
-        const [students, total] = await Promise.all([
-            prisma.etudiant.findMany({
-                where,
-                include: { user: { select: { email: true, actif: true } } },
-                skip,
-                take: parseInt(limit),
-                orderBy: [{ nom: 'asc' }, { prenom: 'asc' }]
-            }),
-            prisma.etudiant.count({ where })
-        ]);
+        const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
-        const formattedStudents = students.map(s => ({
+        // Requête pour les étudiants
+        const studentsQuery = `
+            SELECT e.*, u.email, u.actif 
+            FROM etudiants e 
+            LEFT JOIN users u ON e.userId = u.id 
+            ${whereClause} 
+            ORDER BY e.nom ASC, e.prenom ASC 
+            LIMIT ? OFFSET ?
+        `;
+
+        // Requête pour le total
+        const countQuery = `
+            SELECT COUNT(*) as total 
+            FROM etudiants e 
+            LEFT JOIN users u ON e.userId = u.id 
+            ${whereClause}
+        `;
+
+        const [studentsRows] = await connection.execute(
+            studentsQuery,
+            [...queryParams, parseInt(limit), skip]
+        );
+
+        const [[totalResult]] = await connection.execute(countQuery, queryParams);
+        const total = totalResult.total;
+
+        const formattedStudents = studentsRows.map(s => ({
             id: s.id,
             nom: s.nom,
             prenom: s.prenom,
             identifiantTemporaire: s.identifiantTemporaire,
-            email: s.user?.email,
+            email: s.email,
             filiere: s.filiere,
             annee: s.annee,
-            status: s.user?.actif ? 'Actif' : 'Inactif',
+            status: s.actif ? 'Actif' : 'Inactif',
             matricule: s.matricule,
             ecole: s.ecole
         }));
@@ -263,26 +282,42 @@ router.get('/', async (req, res) => {
     }
 });
 
-// ============================
-// GET /api/students/stats
-// Statistiques globales
-// ============================
+// GET /api/students/stats - Statistiques globales
 router.get('/stats', async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { filiere, annee, ecole } = req.query;
-        const where = { user: { role: 'ETUDIANT' } };
 
-        if (filiere) where.filiere = filiere;
-        if (annee) where.annee = parseInt(annee);
-        if (ecole) where.ecole = ecole;
+        let whereConditions = ['u.role = "ETUDIANT"'];
+        let queryParams = [];
 
-        const students = await prisma.etudiant.findMany({
-            where,
-            select: { id: true, user: { select: { actif: true } }, filiere: true, annee: true, ecole: true }
-        });
+        if (filiere) {
+            whereConditions.push('e.filiere = ?');
+            queryParams.push(filiere);
+        }
+        if (annee) {
+            whereConditions.push('e.annee = ?');
+            queryParams.push(parseInt(annee));
+        }
+        if (ecole) {
+            whereConditions.push('e.ecole = ?');
+            queryParams.push(ecole);
+        }
 
-        const totalStudents = students.length;
-        const activeStudents = students.filter(s => s.user.actif).length;
+        const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+        const query = `
+            SELECT e.id, u.actif, e.filiere, e.annee, e.ecole 
+            FROM etudiants e 
+            LEFT JOIN users u ON e.userId = u.id 
+            ${whereClause}
+        `;
+
+        const [studentsRows] = await connection.execute(query, queryParams);
+
+        const totalStudents = studentsRows.length;
+        const activeStudents = studentsRows.filter(s => s.actif).length;
         const inactiveStudents = totalStudents - activeStudents;
         const activationRate = totalStudents ? ((activeStudents / totalStudents) * 100).toFixed(2) : '0.00';
 
@@ -295,6 +330,5 @@ router.get('/stats', async (req, res) => {
         res.status(500).json({ success: false, message: 'Erreur serveur' });
     }
 });
-
 
 export default router;

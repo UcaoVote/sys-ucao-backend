@@ -1,6 +1,5 @@
 import express from 'express';
-import Admin from '../models/Admin.js';
-import User from '../models/User.js';
+import pool from '../database.js';
 import { authenticateToken } from '../middlewares/auth.js';
 
 const router = express.Router();
@@ -10,12 +9,23 @@ const router = express.Router();
  * Récupère les informations de l'admin connecté
  */
 router.get('/me', authenticateToken, async (req, res) => {
+    let connection;
     try {
-        const admin = await Admin.findWithUser(req.user.id);
+        connection = await pool.getConnection();
 
-        if (!admin) {
+        const [adminRows] = await connection.execute(
+            `SELECT a.*, u.email, u.role, u.photoUrl 
+             FROM admins a 
+             INNER JOIN users u ON a.userId = u.id 
+             WHERE a.userId = ?`,
+            [req.user.id]
+        );
+
+        if (adminRows.length === 0) {
             return res.status(404).json({ message: "Admin introuvable" });
         }
+
+        const admin = adminRows[0];
 
         res.json({
             nom: admin.nom,
@@ -28,6 +38,8 @@ router.get('/me', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error("Erreur admin/me:", err);
         res.status(500).json({ message: "Erreur serveur" });
+    } finally {
+        if (connection) await connection.end();
     }
 });
 
@@ -36,19 +48,38 @@ router.get('/me', authenticateToken, async (req, res) => {
  * Met à jour le profil admin
  */
 router.put('/update', authenticateToken, async (req, res) => {
+    let connection;
     try {
         const { nom, prenom, email } = req.body;
+        connection = await pool.getConnection();
+
+        // Commencer une transaction
+        await connection.beginTransaction();
 
         // Mettre à jour l'admin
-        await Admin.update(req.user.id, { nom, prenom });
+        await connection.execute(
+            `UPDATE admins SET nom = ?, prenom = ?, email = ? WHERE userId = ?`,
+            [nom, prenom, email, req.user.id]
+        );
 
-        // Mettre à jour l'email de l'user si fourni
-        if (email) {
-            await User.update(req.user.id, { email });
-        }
+        // Mettre à jour l'email de l'utilisateur
+        await connection.execute(
+            `UPDATE users SET email = ? WHERE id = ?`,
+            [email, req.user.id]
+        );
 
         // Récupérer les données mises à jour
-        const updatedAdmin = await Admin.findWithUser(req.user.id);
+        const [updatedRows] = await connection.execute(
+            `SELECT a.*, u.email, u.photoUrl 
+             FROM admins a 
+             INNER JOIN users u ON a.userId = u.id 
+             WHERE a.userId = ?`,
+            [req.user.id]
+        );
+
+        await connection.commit();
+
+        const updatedAdmin = updatedRows[0];
 
         res.json({
             message: "Profil mis à jour avec succès",
@@ -60,8 +91,11 @@ router.put('/update', authenticateToken, async (req, res) => {
             }
         });
     } catch (err) {
+        if (connection) await connection.rollback();
         console.error("Erreur admin/update:", err);
         res.status(500).json({ message: "Erreur lors de la mise à jour" });
+    } finally {
+        if (connection) await connection.end();
     }
 });
 

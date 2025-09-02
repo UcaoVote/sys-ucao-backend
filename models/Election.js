@@ -1,4 +1,4 @@
-const pool = require('../database/connection');
+import pool from '../database/connection.js';
 
 const Election = {
     // Trouver une élection par ID
@@ -137,4 +137,4 @@ const Election = {
     }
 };
 
-module.exports = Election;
+export default Election;

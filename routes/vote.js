@@ -1,75 +1,96 @@
 import express from 'express';
-import prisma from '../prisma.js';
+import pool from '../database.js';
 import { authenticateToken } from '../middlewares/auth.js';
-import VoteToken from '../models/VoteToken.js';
 
 const router = express.Router();
 
 // Récupérer le jeton de vote pour une élection
 router.get('/token/:electionId', authenticateToken, async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const userId = req.user.id;
         const { electionId } = req.params;
 
-        const election = await prisma.election.findUnique({
-            where: { id: parseInt(electionId) }
-        });
+        // Vérifier que l'élection existe et est active
+        const [electionRows] = await connection.execute(
+            'SELECT * FROM elections WHERE id = ?',
+            [parseInt(electionId)]
+        );
 
-        if (!election || !election.isActive) {
+        if (electionRows.length === 0 || !electionRows[0].is_active) {
             return res.status(400).json({ message: "Cette élection n'est pas active" });
         }
 
-        // Récupérer les informations complètes de l'étudiant
-        const userWithStudent = await prisma.user.findUnique({
-            where: { id: userId },
-            include: {
-                etudiant: true
-            }
-        });
+        const election = electionRows[0];
 
-        if (!userWithStudent || !userWithStudent.etudiant) {
+        // Récupérer les informations complètes de l'étudiant
+        const [userRows] = await connection.execute(`
+            SELECT u.*, e.* 
+            FROM users u
+            LEFT JOIN etudiants e ON u.id = e.user_id
+            WHERE u.id = ?
+        `, [userId]);
+
+        if (userRows.length === 0 || !userRows[0].user_id) {
             return res.status(403).json({ message: 'Accès refusé - profil étudiant incomplet' });
         }
 
-        const etudiant = userWithStudent.etudiant;
+        const etudiant = userRows[0];
 
+        // Vérifier l'éligibilité
         if (!isEligibleForElection(etudiant, election)) {
             return res.status(403).json({
                 message: 'Vous n\'êtes pas éligible pour cette élection'
             });
         }
 
-        let voteToken = await prisma.voteToken.findFirst({
-            where: {
-                userId,
-                electionId: parseInt(electionId),
-                isUsed: false,
-                expiresAt: { gt: new Date() }
-            }
-        });
+        // Chercher un jeton de vote existant
+        const [tokenRows] = await connection.execute(`
+            SELECT * FROM vote_tokens 
+            WHERE user_id = ? AND election_id = ? AND used = FALSE AND expires_at > NOW()
+        `, [userId, parseInt(electionId)]);
 
-        if (!voteToken) {
-            voteToken = await VoteToken.createToken(userId, parseInt(electionId));
+        let voteToken;
+        if (tokenRows.length > 0) {
+            voteToken = tokenRows[0];
+        } else {
+            // Créer un nouveau jeton de vote
+            const [result] = await connection.execute(`
+                INSERT INTO vote_tokens (user_id, election_id, token, used, expires_at, created_at)
+                VALUES (?, ?, UUID(), FALSE, DATE_ADD(NOW(), INTERVAL 1 HOUR), NOW())
+            `, [userId, parseInt(electionId)]);
+
+            const [newTokenRows] = await connection.execute(
+                'SELECT * FROM vote_tokens WHERE id = ?',
+                [result.insertId]
+            );
+            voteToken = newTokenRows[0];
         }
 
         res.json({
             token: voteToken.token,
-            expiresAt: voteToken.expiresAt,
+            expiresAt: voteToken.expires_at,
             election: {
                 id: election.id,
                 titre: election.titre,
                 type: election.type
             }
         });
+
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Erreur serveur' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
 // Soumettre un vote avec calcul du poids
 router.post('/', async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { electionId, candidateId, voteToken } = req.body;
 
         if (!electionId || !candidateId || !voteToken) {
@@ -78,88 +99,97 @@ router.post('/', async (req, res) => {
             });
         }
 
-        const validatedToken = await VoteToken.validateToken(voteToken, parseInt(electionId));
-        if (!validatedToken) {
+        // Valider le jeton de vote
+        const [tokenRows] = await connection.execute(`
+            SELECT * FROM vote_tokens 
+            WHERE token = ? AND election_id = ? AND used = FALSE AND expires_at > NOW()
+        `, [voteToken, parseInt(electionId)]);
+
+        if (tokenRows.length === 0) {
             return res.status(400).json({ message: 'Jeton de vote invalide ou expiré' });
         }
 
-        const userId = validatedToken.userId;
+        const validatedToken = tokenRows[0];
+        const userId = validatedToken.user_id;
 
-        const election = await prisma.election.findUnique({
-            where: { id: parseInt(electionId) }
-        });
+        // Vérifier que l'élection est active
+        const [electionRows] = await connection.execute(
+            'SELECT * FROM elections WHERE id = ?',
+            [parseInt(electionId)]
+        );
 
-        if (!election || !election.isActive) {
+        if (electionRows.length === 0 || !electionRows[0].is_active) {
             return res.status(400).json({ message: "Cette élection n'est pas active" });
         }
 
-        const existingVote = await prisma.vote.findUnique({
-            where: {
-                userId_electionId: {
-                    userId,
-                    electionId: parseInt(electionId),
-                },
-            },
-        });
+        const election = electionRows[0];
 
-        if (existingVote) {
+        // Vérifier si l'utilisateur a déjà voté
+        const [voteRows] = await connection.execute(`
+            SELECT * FROM votes 
+            WHERE user_id = ? AND election_id = ?
+        `, [userId, parseInt(electionId)]);
+
+        if (voteRows.length > 0) {
             return res.status(400).json({ message: 'Vous avez déjà voté pour cette élection' });
         }
 
-        const candidate = await prisma.candidate.findUnique({
-            where: { id: parseInt(candidateId) }
-        });
+        // Vérifier que le candidat existe pour cette élection
+        const [candidateRows] = await connection.execute(
+            'SELECT * FROM candidates WHERE id = ? AND election_id = ?',
+            [parseInt(candidateId), parseInt(electionId)]
+        );
 
-        if (!candidate || candidate.electionId !== parseInt(electionId)) {
+        if (candidateRows.length === 0) {
             return res.status(400).json({ message: 'Candidat invalide pour cette élection' });
         }
 
-        // Calculer le poids du vote (1 pour étudiant normal, 1.6 pour responsable de salle)
-        const poidsVote = await calculateVoteWeight(userId, election);
+        // Calculer le poids du vote
+        const poidsVote = await calculateVoteWeight(connection, userId, election);
 
-        // Enregistrement du vote avec poids
-        await prisma.vote.create({
-            data: {
-                userId,
-                electionId: parseInt(electionId),
-                candidateId: parseInt(candidateId),
-                poidsVote
-            },
-        });
+        // Enregistrer le vote
+        await connection.execute(`
+            INSERT INTO votes (user_id, election_id, candidate_id, poids_vote, created_at)
+            VALUES (?, ?, ?, ?, NOW())
+        `, [userId, parseInt(electionId), parseInt(candidateId), poidsVote]);
 
-        await VoteToken.markTokenAsUsed(voteToken);
+        // Marquer le jeton comme utilisé
+        await connection.execute(
+            'UPDATE vote_tokens SET used = TRUE, used_at = NOW() WHERE id = ?',
+            [validatedToken.id]
+        );
 
         res.json({ message: 'Vote enregistré avec succès' });
+
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Erreur serveur' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
 // Calculer le poids du vote
-async function calculateVoteWeight(userId, election) {
+async function calculateVoteWeight(connection, userId, election) {
     try {
         // Vérifier si l'utilisateur est un responsable de salle
-        const userWithStudent = await prisma.user.findUnique({
-            where: { id: userId },
-            include: {
-                etudiant: {
-                    include: {
-                        responsableSalle: {
-                            where: {
-                                filiere: election.filiere || undefined,
-                                annee: election.annee || undefined,
-                                ecole: election.ecole || undefined
-                            }
-                        }
-                    }
-                }
-            }
-        });
+        const [responsableRows] = await connection.execute(`
+            SELECT rs.* 
+            FROM responsable_salle rs
+            LEFT JOIN etudiants e ON rs.etudiant_id = e.id
+            WHERE e.user_id = ? 
+            AND (? IS NULL OR rs.filiere = ?)
+            AND (? IS NULL OR rs.annee = ?)
+            AND (? IS NULL OR rs.ecole = ?)
+        `, [
+            userId,
+            election.filiere, election.filiere,
+            election.annee, election.annee,
+            election.ecole, election.ecole
+        ]);
 
-        // Si c'est un responsable de salle dans la même filière/année/école, poids = 1.6
-        if (userWithStudent && userWithStudent.etudiant &&
-            userWithStudent.etudiant.responsableSalle.length > 0) {
+        // Si c'est un responsable de salle, poids = 1.6
+        if (responsableRows.length > 0) {
             return 1.6;
         }
 
@@ -167,62 +197,67 @@ async function calculateVoteWeight(userId, election) {
         return 1.0;
     } catch (error) {
         console.error('Erreur calcul poids vote:', error);
-        return 1.0; // Par défaut en cas d'erreur
+        return 1.0;
     }
 }
 
-// Récupérer les résultats d'une élection 
+// Récupérer les résultats d'une élection
 router.get('/results/:electionId', async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { electionId } = req.params;
 
-        const election = await prisma.election.findUnique({
-            where: { id: parseInt(electionId) },
-            include: {
-                candidates: {
-                    include: {
-                        user: {
-                            include: {
-                                etudiant: true
-                            }
-                        }
-                    }
-                },
-                votes: {
-                    include: {
-                        user: {
-                            include: {
-                                etudiant: {
-                                    include: {
-                                        responsableSalle: true
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                _count: {
-                    select: { voteTokens: true }
-                }
-            }
-        });
+        // Récupérer l'élection
+        const [electionRows] = await connection.execute(
+            'SELECT * FROM elections WHERE id = ?',
+            [parseInt(electionId)]
+        );
 
-        if (!election) {
+        if (electionRows.length === 0) {
             return res.status(404).json({ message: 'Élection non trouvée' });
         }
 
+        const election = electionRows[0];
+
+        // Récupérer les candidats
+        const [candidateRows] = await connection.execute(`
+            SELECT c.*, u.email, e.nom, e.prenom
+            FROM candidates c
+            LEFT JOIN users u ON c.user_id = u.id
+            LEFT JOIN etudiants e ON u.id = e.user_id
+            WHERE c.election_id = ?
+        `, [parseInt(electionId)]);
+
+        // Récupérer les votes
+        const [voteRows] = await connection.execute(`
+            SELECT v.*, u.email, e.nom, e.prenom
+            FROM votes v
+            LEFT JOIN users u ON v.user_id = u.id
+            LEFT JOIN etudiants e ON u.id = e.user_id
+            WHERE v.election_id = ?
+        `, [parseInt(electionId)]);
+
+        // Récupérer le nombre total de jetons
+        const [tokenCountRows] = await connection.execute(
+            'SELECT COUNT(*) as count FROM vote_tokens WHERE election_id = ?',
+            [parseInt(electionId)]
+        );
+
+        const totalInscrits = tokenCountRows[0].count;
+
         // Calcul des résultats avec pondération
-        const resultats = election.candidates.map(candidate => {
-            const votes = election.votes.filter(vote => vote.candidateId === candidate.id);
+        const resultats = candidateRows.map(candidate => {
+            const votes = voteRows.filter(vote => vote.candidate_id === candidate.id);
 
             // Calcul du score pondéré
             let scorePondere = 0;
             votes.forEach(vote => {
-                scorePondere += vote.poidsVote || 1.0; // Par défaut 1.0 si poids non défini
+                scorePondere += vote.poids_vote || 1.0;
             });
 
             // Pourcentage basé sur le total des poids de votes
-            const totalPoids = election.votes.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
+            const totalPoids = voteRows.reduce((sum, vote) => sum + (vote.poids_vote || 1.0), 0);
             const pourcentage = totalPoids > 0 ? (scorePondere / totalPoids) * 100 : 0;
 
             return {
@@ -238,7 +273,7 @@ router.get('/results/:electionId', async (req, res) => {
             };
         });
 
-        // TRI PAR SCORE FINAL
+        // Trier par score final
         resultats.sort((a, b) => b.scoreFinal - a.scoreFinal);
 
         const response = {
@@ -249,16 +284,16 @@ router.get('/results/:electionId', async (req, res) => {
                 ecole: election.ecole,
                 filiere: election.filiere,
                 annee: election.annee,
-                dateDebut: election.dateDebut,
-                dateFin: election.dateFin,
-                isActive: election.isActive
+                dateDebut: election.date_debut,
+                dateFin: election.date_fin,
+                isActive: election.is_active
             },
             statistiques: {
-                totalVotes: election.votes.length,
-                totalPoids: election.votes.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0),
-                totalInscrits: election._count.voteTokens,
-                tauxParticipation: election._count.voteTokens > 0
-                    ? parseFloat(((election.votes.length / election._count.voteTokens) * 100).toFixed(2))
+                totalVotes: voteRows.length,
+                totalPoids: voteRows.reduce((sum, vote) => sum + (vote.poids_vote || 1.0), 0),
+                totalInscrits: totalInscrits,
+                tauxParticipation: totalInscrits > 0
+                    ? parseFloat(((voteRows.length / totalInscrits) * 100).toFixed(2))
                     : 0
             },
             resultats: resultats
@@ -268,74 +303,82 @@ router.get('/results/:electionId', async (req, res) => {
     } catch (error) {
         console.error('Erreur calcul résultats:', error);
         res.status(500).json({ message: 'Erreur serveur' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
 // Récupérer les résultats détaillés avec séparation responsables/étudiants
 router.get('/results-detailed/:electionId', async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { electionId } = req.params;
 
-        const election = await prisma.election.findUnique({
-            where: { id: parseInt(electionId) },
-            include: {
-                candidates: {
-                    include: {
-                        user: {
-                            include: {
-                                etudiant: true
-                            }
-                        }
-                    }
-                },
-                votes: {
-                    include: {
-                        user: {
-                            include: {
-                                etudiant: {
-                                    include: {
-                                        responsableSalle: {
-                                            where: {
-                                                filiere: election.filiere || undefined,
-                                                annee: election.annee || undefined,
-                                                ecole: election.ecole || undefined
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                _count: {
-                    select: { voteTokens: true }
-                }
-            }
-        });
+        // Récupérer l'élection
+        const [electionRows] = await connection.execute(
+            'SELECT * FROM elections WHERE id = ?',
+            [parseInt(electionId)]
+        );
 
-        if (!election) {
+        if (electionRows.length === 0) {
             return res.status(404).json({ message: 'Élection non trouvée' });
         }
 
-        // SÉPARATION DES VOTES
-        const votesResponsables = election.votes.filter(vote =>
-            vote.user.etudiant?.responsableSalle &&
-            vote.user.etudiant.responsableSalle.length > 0
+        const election = electionRows[0];
+
+        // Récupérer les candidats
+        const [candidateRows] = await connection.execute(`
+            SELECT c.*, u.email, e.nom, e.prenom
+            FROM candidates c
+            LEFT JOIN users u ON c.user_id = u.id
+            LEFT JOIN etudiants e ON u.id = e.user_id
+            WHERE c.election_id = ?
+        `, [parseInt(electionId)]);
+
+        // Récupérer les votes avec information des responsables
+        const [voteRows] = await connection.execute(`
+            SELECT 
+                v.*, 
+                u.email,
+                e.nom,
+                e.prenom,
+                CASE WHEN rs.id IS NOT NULL THEN TRUE ELSE FALSE END as is_responsable
+            FROM votes v
+            LEFT JOIN users u ON v.user_id = u.id
+            LEFT JOIN etudiants e ON u.id = e.user_id
+            LEFT JOIN responsable_salle rs ON e.id = rs.etudiant_id
+                AND (? IS NULL OR rs.filiere = ?)
+                AND (? IS NULL OR rs.annee = ?)
+                AND (? IS NULL OR rs.ecole = ?)
+            WHERE v.election_id = ?
+        `, [
+            election.filiere, election.filiere,
+            election.annee, election.annee,
+            election.ecole, election.ecole,
+            parseInt(electionId)
+        ]);
+
+        // Récupérer le nombre total de jetons
+        const [tokenCountRows] = await connection.execute(
+            'SELECT COUNT(*) as count FROM vote_tokens WHERE election_id = ?',
+            [parseInt(electionId)]
         );
 
-        const votesEtudiants = election.votes.filter(vote =>
-            !vote.user.etudiant?.responsableSalle ||
-            vote.user.etudiant.responsableSalle.length === 0
-        );
+        const totalInscrits = tokenCountRows[0].count;
 
-        // CALCUL DES RÉSULTATS BRUTS
+        // Séparation des votes
+        const votesResponsables = voteRows.filter(vote => vote.is_responsable);
+        const votesEtudiants = voteRows.filter(vote => !vote.is_responsable);
+
+        // Calcul des résultats
         const calculerVotes = (votes) => {
             const resultats = {};
-            election.candidates.forEach(candidate => {
+            candidateRows.forEach(candidate => {
                 resultats[candidate.id] = 0;
             });
             votes.forEach(vote => {
-                resultats[vote.candidateId] = (resultats[vote.candidateId] || 0) + (vote.poidsVote || 1.0);
+                resultats[vote.candidate_id] = (resultats[vote.candidate_id] || 0) + (vote.poids_vote || 1.0);
             });
             return resultats;
         };
@@ -343,11 +386,11 @@ router.get('/results-detailed/:electionId', async (req, res) => {
         const votesParCandidatResponsables = calculerVotes(votesResponsables);
         const votesParCandidatEtudiants = calculerVotes(votesEtudiants);
 
-        const totalVotesResponsables = votesResponsables.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
-        const totalVotesEtudiants = votesEtudiants.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
+        const totalVotesResponsables = votesResponsables.reduce((sum, vote) => sum + (vote.poids_vote || 1.0), 0);
+        const totalVotesEtudiants = votesEtudiants.reduce((sum, vote) => sum + (vote.poids_vote || 1.0), 0);
 
-        // CALCUL DES RÉSULTATS PONDÉRÉS (60/40)
-        const resultatsPonderes = election.candidates.map(candidate => {
+        // Calcul des résultats pondérés (60/40)
+        const resultatsPonderes = candidateRows.map(candidate => {
             const votesRespo = votesParCandidatResponsables[candidate.id] || 0;
             const votesEtud = votesParCandidatEtudiants[candidate.id] || 0;
 
@@ -375,7 +418,7 @@ router.get('/results-detailed/:electionId', async (req, res) => {
             };
         });
 
-        // TRI PAR SCORE FINAL
+        // Trier par score final
         resultatsPonderes.sort((a, b) => b.scoreFinal - a.scoreFinal);
 
         const response = {
@@ -386,19 +429,19 @@ router.get('/results-detailed/:electionId', async (req, res) => {
                 ecole: election.ecole,
                 filiere: election.filiere,
                 annee: election.annee,
-                dateDebut: election.dateDebut,
-                dateFin: election.dateFin,
-                isActive: election.isActive
+                dateDebut: election.date_debut,
+                dateFin: election.date_fin,
+                isActive: election.is_active
             },
             statistiques: {
-                totalVotes: election.votes.length,
+                totalVotes: voteRows.length,
                 votesResponsables: votesResponsables.length,
                 votesEtudiants: votesEtudiants.length,
                 totalPoidsResponsables: totalVotesResponsables,
                 totalPoidsEtudiants: totalVotesEtudiants,
-                totalInscrits: election._count.voteTokens,
-                tauxParticipation: election._count.voteTokens > 0
-                    ? parseFloat(((election.votes.length / election._count.voteTokens) * 100).toFixed(2))
+                totalInscrits: totalInscrits,
+                tauxParticipation: totalInscrits > 0
+                    ? parseFloat(((voteRows.length / totalInscrits) * 100).toFixed(2))
                     : 0
             },
             resultats: resultatsPonderes
@@ -408,49 +451,41 @@ router.get('/results-detailed/:electionId', async (req, res) => {
     } catch (error) {
         console.error('Erreur calcul résultats détaillés:', error);
         res.status(500).json({ message: 'Erreur serveur' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
 // Vérifier le statut de vote d'un utilisateur
 router.get('/status/:electionId', authenticateToken, async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const userId = req.user.id;
         const { electionId } = req.params;
 
-        const vote = await prisma.vote.findUnique({
-            where: {
-                userId_electionId: {
-                    userId,
-                    electionId: parseInt(electionId),
-                },
-            },
-        });
+        const [voteRows] = await connection.execute(`
+            SELECT * FROM votes 
+            WHERE user_id = ? AND election_id = ?
+        `, [userId, parseInt(electionId)]);
 
         res.json({
-            hasVoted: !!vote,
+            hasVoted: voteRows.length > 0,
             electionId: parseInt(electionId)
         });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Erreur serveur' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
-// Backend: créer cet endpoint
-router.get('/vote/my-votes', authenticateToken, async (req, res) => {
-    try {
-        const votes = await votes.find({ userId: req.user.id })
-            .populate('electionId')
-            .populate('candidateId');
-        res.json(votes);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Valider un token de vote 
+// Valider un token de vote
 router.post('/validate-token', authenticateToken, async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { electionId, voteToken } = req.body;
 
         if (!electionId || !voteToken) {
@@ -459,9 +494,12 @@ router.post('/validate-token', authenticateToken, async (req, res) => {
             });
         }
 
-        const validatedToken = await VoteToken.validateToken(voteToken, parseInt(electionId));
+        const [tokenRows] = await connection.execute(`
+            SELECT * FROM vote_tokens 
+            WHERE token = ? AND election_id = ? AND used = FALSE AND expires_at > NOW()
+        `, [voteToken, parseInt(electionId)]);
 
-        if (!validatedToken) {
+        if (tokenRows.length === 0) {
             return res.status(400).json({
                 message: 'Jeton de vote invalide ou expiré',
                 valid: false
@@ -470,12 +508,37 @@ router.post('/validate-token', authenticateToken, async (req, res) => {
 
         res.json({
             valid: true,
-            expiresAt: validatedToken.expiresAt
+            expiresAt: tokenRows[0].expires_at
         });
     } catch (error) {
         console.error('Erreur validation token:', error);
         res.status(500).json({ message: 'Erreur serveur', valid: false });
+    } finally {
+        if (connection) connection.release();
     }
 });
+
+// Fonction pour vérifier l'éligibilité
+function isEligibleForElection(etudiant, election) {
+    if (!etudiant || !election) return false;
+
+    const etudiantFiliere = String(etudiant.filiere || '');
+    const etudiantAnnee = String(etudiant.annee || '');
+    const etudiantEcole = String(etudiant.ecole || '');
+    const electionFiliere = String(election.filiere || '');
+    const electionAnnee = String(election.annee || '');
+    const electionEcole = String(election.ecole || '');
+
+    if (election.type === 'SALLE') {
+        return etudiantFiliere === electionFiliere &&
+            etudiantAnnee === electionAnnee &&
+            etudiantEcole === electionEcole;
+    } else if (election.type === 'ECOLE') {
+        return etudiantEcole === electionEcole;
+    } else if (election.type === 'UNIVERSITE') {
+        return true;
+    }
+    return false;
+}
 
 export default router;

@@ -1,39 +1,36 @@
 import express from 'express';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import User from '../models/User.js';
-import Admin from '../models/Admin.js';
+import pool from '../database.js';
 
 const router = express.Router();
 
+
 router.post('/', async (req, res) => {
+    let connection;
     try {
         const { email, password } = req.body;
 
         if (!email || !password)
             return res.status(400).json({ message: 'Email et mot de passe requis' });
 
-        // Trouver user par email
-        const user = await User.findByEmail(email);
+        connection = await pool.getConnection();
 
-        if (!user || user.role !== 'ADMIN') {
+        // Trouver user ADMIN par email
+        const [userRows] = await connection.execute(
+            `SELECT * FROM users WHERE email = ? AND role = 'ADMIN'`,
+            [email]
+        );
+
+        if (userRows.length === 0) {
             return res.status(400).json({ message: 'Administrateur non trouvé ou rôle invalide' });
         }
 
-        // Vérifier si le compte est actif
-        if (!user.actif) {
-            return res.status(400).json({ message: 'Compte désactivé' });
-        }
+        const user = userRows[0];
 
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword)
             return res.status(400).json({ message: 'Mot de passe incorrect' });
-
-        // Vérifier que l'admin existe bien
-        const admin = await Admin.findByUserId(user.id);
-        if (!admin) {
-            return res.status(400).json({ message: 'Profil administrateur incomplet' });
-        }
 
         // Génération du token JWT
         const token = jwt.sign(
@@ -50,6 +47,8 @@ router.post('/', async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Erreur serveur' });
+    } finally {
+        if (connection) await connection.end();
     }
 });
 

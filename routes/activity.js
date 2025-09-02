@@ -1,6 +1,7 @@
 import express from 'express';
-import prisma from '../prisma.js';
+import pool from '../database.js';
 import { authenticateToken } from '../middlewares/auth.js';
+import pool from '../database.js';
 
 const router = express.Router();
 
@@ -9,45 +10,41 @@ const router = express.Router();
  * Récupère les activités récentes pour le dashboard 
  */
 router.get('/', authenticateToken, async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { limit = 10 } = req.query;
 
         // Récupérer les activités avec les informations utilisateur de base
-        const activities = await prisma.activityLog.findMany({
-            take: parseInt(limit),
-            orderBy: { createdAt: 'desc' },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        email: true,
-                        role: true,
-                        admin: {
-                            select: {
-                                nom: true,
-                                prenom: true
-                            }
-                        },
-                        etudiant: {
-                            select: {
-                                nom: true,
-                                prenom: true
-                            }
-                        }
-                    }
-                }
-            }
-        });
+        const query = `
+            SELECT 
+                al.*,
+                u.id as user_id,
+                u.email,
+                u.role,
+                a.nom as admin_nom,
+                a.prenom as admin_prenom,
+                e.nom as etudiant_nom,
+                e.prenom as etudiant_prenom
+            FROM activity_log al
+            LEFT JOIN users u ON al.userId = u.id
+            LEFT JOIN admins a ON u.id = a.userId
+            LEFT JOIN etudiants e ON u.id = e.userId
+            ORDER BY al.createdAt DESC
+            LIMIT ?
+        `;
+
+        const [activities] = await connection.execute(query, [parseInt(limit)]);
 
         // Formatter les activités
         const formattedActivities = activities.map(activity => {
-            let userName = activity.user?.email || 'Utilisateur inconnu';
+            let userName = activity.email || 'Utilisateur inconnu';
 
             // Déterminer le nom selon le rôle
-            if (activity.user?.role === 'ADMIN' && activity.user.admin) {
-                userName = `${activity.user.admin.nom} ${activity.user.admin.prenom}`;
-            } else if (activity.user?.role === 'ETUDIANT' && activity.user.etudiant) {
-                userName = `${activity.user.etudiant.nom} ${activity.user.etudiant.prenom}`;
+            if (activity.role === 'ADMIN' && activity.admin_nom) {
+                userName = `${activity.admin_nom} ${activity.admin_prenom}`;
+            } else if (activity.role === 'ETUDIANT' && activity.etudiant_nom) {
+                userName = `${activity.etudiant_nom} ${activity.etudiant_prenom}`;
             }
 
             return {
@@ -66,12 +63,10 @@ router.get('/', authenticateToken, async (req, res) => {
         res.status(500).json({
             message: "Erreur serveur",
             error: err.message,
-            // Ne pas envoyer les détails complets en production
             ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
         });
     }
 });
-
 
 // Helpers
 function formatTime(date) {

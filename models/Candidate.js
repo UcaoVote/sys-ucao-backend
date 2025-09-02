@@ -1,4 +1,4 @@
-const pool = require('../database/connection');
+import pool from '../database/connection.js';
 
 const Candidate = {
     // Trouver un candidat par ID
@@ -100,4 +100,4 @@ const Candidate = {
     }
 };
 
-module.exports = Candidate;
+export default Candidate;

@@ -1,5 +1,5 @@
+import pool from '../database.js';
 import express from 'express';
-import prisma from '../prisma.js';
 import { authenticateToken } from '../middlewares/auth.js';
 
 const router = express.Router();
@@ -11,6 +11,7 @@ const router = express.Router();
  * }
  */
 router.post('/import', authenticateToken, async (req, res) => {
+    let connection;
     try {
         const { matricules } = req.body;
 
@@ -18,9 +19,16 @@ router.post('/import', authenticateToken, async (req, res) => {
             return res.status(400).json({ message: 'Liste de matricules invalide.' });
         }
 
+        // Récupération d'une connexion depuis le pool
+        connection = await pool.getConnection();
+
         // Vérifier que l'utilisateur est un admin
-        const admin = await prisma.admin.findUnique({ where: { userId: req.user.id } });
-        if (!admin) {
+        const [adminRows] = await connection.execute(
+            'SELECT id FROM admins WHERE user_id = ?',
+            [req.user.id]
+        );
+
+        if (adminRows.length === 0) {
             return res.status(403).json({ message: 'Accès refusé. Admin requis.' });
         }
 
@@ -28,17 +36,22 @@ router.post('/import', authenticateToken, async (req, res) => {
         const skippedMatricules = [];
 
         for (const mat of matricules) {
-            // Vérifier que le matricule n’existe pas déjà
-            const exists = await prisma.etudiant.findUnique({ where: { matricule: mat } });
-            if (exists) {
+            // Vérifier que le matricule n'existe pas déjà
+            const [existingRows] = await connection.execute(
+                'SELECT id FROM etudiants WHERE matricule = ?',
+                [mat]
+            );
+
+            if (existingRows.length > 0) {
                 skippedMatricules.push(mat);
                 continue;
             }
 
-            // Créer l’étudiant avec seulement le matricule, autres champs vides
-            await prisma.etudiant.create({
-                data: { matricule: mat }
-            });
+            // Créer l'étudiant avec seulement le matricule, autres champs vides
+            await connection.execute(
+                'INSERT INTO etudiants (matricule) VALUES (?)',
+                [mat]
+            );
             createdMatricules.push(mat);
         }
 
@@ -50,6 +63,9 @@ router.post('/import', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error('Erreur import matricules:', err);
         return res.status(500).json({ message: 'Erreur serveur.' });
+    } finally {
+        // Libération de la connexion
+        if (connection) connection.release();
     }
 });
 

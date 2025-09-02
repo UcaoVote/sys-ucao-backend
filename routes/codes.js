@@ -1,103 +1,102 @@
-// routes/code.js
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
+import pool from '../database.js';
 import { authenticateToken, requireRole } from '../middlewares/auth.js';
 
-const prisma = new PrismaClient();
 const router = express.Router();
 
 // GET /code/list - Liste tous les codes avec pagination
 router.get('/list', authenticateToken, requireRole('ADMIN'), async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { page = 1, limit = 10, search = '', status = 'all' } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
         // Construction du filtre WHERE
-        let whereClause = {};
+        let whereClause = '1=1';
+        let params = [];
 
         // Filtre de recherche
         if (search) {
-            whereClause.OR = [
-                { code: { contains: search, mode: 'insensitive' } },
-                {
-                    generatedByUser: {
-                        is: {
-                            OR: [
-                                { nom: { contains: search, mode: 'insensitive' } },
-                                { prenom: { contains: search, mode: 'insensitive' } },
-                                { email: { contains: search, mode: 'insensitive' } }
-                            ]
-                        }
-                    }
-                },
-                {
-                    usedByUser: {
-                        is: {
-                            OR: [
-                                { nom: { contains: search, mode: 'insensitive' } },
-                                { prenom: { contains: search, mode: 'insensitive' } },
-                                { email: { contains: search, mode: 'insensitive' } }
-                            ]
-                        }
-                    }
-                }
-            ];
+            whereClause += ` AND (
+                rc.code LIKE ? OR 
+                u1.nom LIKE ? OR 
+                u1.prenom LIKE ? OR 
+                u1.email LIKE ? OR
+                u2.nom LIKE ? OR 
+                u2.prenom LIKE ? OR 
+                u2.email LIKE ?
+            )`;
+            const searchPattern = `%${search}%`;
+            for (let i = 0; i < 7; i++) params.push(searchPattern);
         }
 
         // Filtre d'état
         if (status === 'used') {
-            whereClause.used = true;
+            whereClause += ' AND rc.used = TRUE';
         } else if (status === 'unused') {
-            whereClause.used = false;
+            whereClause += ' AND rc.used = FALSE';
         }
 
-        const [codes, total] = await Promise.all([
-            prisma.registrationCode.findMany({
-                where: whereClause,
-                skip,
-                take: parseInt(limit),
-                orderBy: { createdAt: 'desc' },
-                include: {
-                    generatedByUser: {
-                        include: {
-                            admin: true
-                        }
-                    },
-                    usedByUser: {
-                        include: {
-                            etudiant: true
-                        }
-                    }
+        // Requête pour récupérer les codes
+        const [codeRows] = await connection.execute(`
+            SELECT 
+                rc.*,
+                u1.id as generated_by_user_id,
+                u1.email as generated_by_email,
+                a1.nom as generated_by_nom,
+                a1.prenom as generated_by_prenom,
+                u2.id as used_by_user_id,
+                u2.email as used_by_email,
+                e2.nom as used_by_nom,
+                e2.prenom as used_by_prenom
+            FROM registration_codes rc
+            LEFT JOIN users u1 ON rc.generated_by = u1.id
+            LEFT JOIN admins a1 ON u1.id = a1.user_id
+            LEFT JOIN users u2 ON rc.used_by = u2.id
+            LEFT JOIN etudiants e2 ON u2.id = e2.user_id
+            WHERE ${whereClause}
+            ORDER BY rc.created_at DESC
+            LIMIT ? OFFSET ?
+        `, [...params, parseInt(limit), skip]);
 
-                }
-            }),
-            prisma.registrationCode.count({ where: whereClause })
-        ]);
+        // Compter le total
+        const [countRows] = await connection.execute(`
+            SELECT COUNT(*) as total 
+            FROM registration_codes rc
+            LEFT JOIN users u1 ON rc.generated_by = u1.id
+            LEFT JOIN admins a1 ON u1.id = a1.user_id
+            LEFT JOIN users u2 ON rc.used_by = u2.id
+            LEFT JOIN etudiants e2 ON u2.id = e2.user_id
+            WHERE ${whereClause}
+        `, params);
+
+        const total = countRows[0].total;
+
+        // Formater la réponse
+        const formattedCodes = codeRows.map(code => ({
+            id: code.id,
+            code: code.code,
+            createdAt: code.created_at,
+            expiresAt: code.expires_at,
+            used: code.used,
+            usedAt: code.used_at,
+            generatedBy: code.generated_by_nom
+                ? `${code.generated_by_prenom} ${code.generated_by_nom} (${code.generated_by_email})`
+                : 'Système',
+            usedBy: code.used_by_nom
+                ? `${code.used_by_prenom} ${code.used_by_nom} (${code.used_by_email})`
+                : null
+        }));
 
         res.json({
             success: true,
             data: {
-                codes: codes.map(code => ({
-                    id: code.id,
-                    code: code.code,
-                    createdAt: code.createdAt,
-                    expiresAt: code.expiresAt,
-                    used: code.used,
-                    usedAt: code.usedAt,
-                    generatedBy: code.generatedByUser?.admin
-                        ? `${code.generatedByUser.admin.prenom} ${code.generatedByUser.admin.nom} (${code.generatedByUser.email})`
-                        : 'Système',
-
-                    usedBy: code.usedByUser?.etudiant
-                        ? `${code.usedByUser.etudiant.prenom} ${code.usedByUser.etudiant.nom} (${code.usedByUser.email})`
-                        : null
-
-
-                })),
+                codes: formattedCodes,
                 pagination: {
                     current: parseInt(page),
                     total: Math.ceil(total / limit),
-                    count: codes.length,
+                    count: codeRows.length,
                     totalItems: total
                 }
             }
@@ -109,12 +108,16 @@ router.get('/list', authenticateToken, requireRole('ADMIN'), async (req, res) =>
             success: false,
             message: "Erreur serveur lors de la récupération des codes"
         });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
 // POST /code/generate - Générer de nouveaux codes
 router.post('/generate', authenticateToken, requireRole('ADMIN'), async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { quantity = 1, expiresInHours = 24 } = req.body;
         const userId = req.user.id;
 
@@ -131,15 +134,13 @@ router.post('/generate', authenticateToken, requireRole('ADMIN'), async (req, re
             const expiresAt = new Date();
             expiresAt.setHours(expiresAt.getHours() + parseInt(expiresInHours));
 
-            const newCode = await prisma.registrationCode.create({
-                data: {
-                    code,
-                    expiresAt,
-                    generatedBy: userId
-                }
-            });
+            // Insérer le code dans la base de données
+            const [result] = await connection.execute(`
+                INSERT INTO registration_codes (code, expires_at, generated_by, created_at)
+                VALUES (?, ?, ?, NOW())
+            `, [code, expiresAt, userId]);
 
-            codes.push(newCode.code);
+            codes.push(code);
         }
 
         res.status(201).json({
@@ -154,6 +155,8 @@ router.post('/generate', authenticateToken, requireRole('ADMIN'), async (req, re
             success: false,
             message: "Erreur serveur lors de la génération du code"
         });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
@@ -164,6 +167,4 @@ function generateRandomCode() {
         Math.random().toString(36).substring(2, 6).toUpperCase();
 }
 
-
 export default router;
-

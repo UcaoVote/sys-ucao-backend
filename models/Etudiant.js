@@ -1,4 +1,4 @@
-const pool = require('../database/connection');
+import pool from '../database/connection.js';
 
 const Etudiant = {
     // Trouver un étudiant par son ID
@@ -126,4 +126,4 @@ const Etudiant = {
     }
 };
 
-module.exports = Etudiant;
+export default Etudiant;

@@ -2,7 +2,7 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
-import prisma from '../prisma.js';
+import pool from '../database.js';
 import { authenticateToken } from '../middlewares/auth.js';
 import { PasswordResetService } from '../services/passwordResetService.js';
 
@@ -20,77 +20,60 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret';
 const JWT_EXPIRES_NORMAL = '8h';
 const JWT_EXPIRES_TEMP = '1h';
 
-// --- LOGIN ---
-// accepte body: { identifier/email, password, identifiantTemporaire (optionnel) }
-// on supporte recherche par email OR identifiantTemporaire
+// POST /auth/login
 router.post('/', async (req, res) => {
+    let connection;
     try {
-        console.log('=== DÉBUT LOGIN ===');
-        console.log('Body reçu:', JSON.stringify(req.body, null, 2));
-
-        // Accept both shapes: either { email, password } or { identifier, password } or { identifiantTemporaire, password }
+        connection = await pool.getConnection();
         const identifier = req.body.identifier || req.body.email || null;
         const { password, identifiantTemporaire } = req.body;
 
-        // If identifiantTemporaire explicitly provided -> handle temporary flow
         if (identifiantTemporaire) {
-            console.log('Tentative avec identifiant temporaire fournie');
             return handleTemporaryLogin(req, res);
         }
 
         if (!identifier || !password) {
-            console.log('Champs manquants');
             return res.status(400).json({ success: false, message: 'Identifiant et mot de passe requis' });
         }
 
         let user = null;
 
-        // Détecter si l'identifiant contient '@' → email, sinon identifiant normal
         if (identifier.includes('@')) {
             // Recherche par email
-            user = await prisma.user.findUnique({
-                where: { email: identifier },
-                include: { etudiant: true, admin: true }
-            });
+            const [userRows] = await connection.execute(
+                'SELECT * FROM users WHERE email = ?',
+                [identifier]
+            );
+            user = userRows[0];
         } else {
-            // Recherche par identifiant temporaire (ou autre identifiant normal)
-            const studentRow = await prisma.etudiant.findFirst({
-                where: { identifiantTemporaire: identifier },
-                include: { user: true }
-            });
-            if (studentRow && studentRow.user) user = studentRow.user;
+            // Recherche par identifiant temporaire
+            const [studentRows] = await connection.execute(
+                `SELECT u.* FROM users u 
+                 JOIN etudiants e ON u.id = e.userId 
+                 WHERE e.identifiantTemporaire = ?`,
+                [identifier]
+            );
+            user = studentRows[0];
         }
-
 
         if (!user) {
-            console.log('Utilisateur non trouvé');
             return res.status(401).json({ success: false, message: 'Identifiants invalides' });
         }
 
-        console.log('Utilisateur trouvé:', user.email || user.id);
-
-        // Check if temporary password exists
+        // Vérifier mot de passe temporaire
         if (user.tempPassword) {
-            if (identifiantTemporaire) {
-                // L'utilisateur tente de se connecter avec le mot de passe temporaire
-                return handleTemporaryLogin(req, res);
-            } else {
-                // Connexion normale non autorisée tant que compte temp existe
-                return res.status(401).json({
-                    success: false,
-                    message: 'Votre compte a été réinitialisé. Utilisez vos identifiants temporaires.',
-                    requirePasswordChange: true
-                });
-            }
+            return res.status(401).json({
+                success: false,
+                message: 'Votre compte a été réinitialisé. Utilisez vos identifiants temporaires.',
+                requirePasswordChange: true
+            });
         }
 
-        // Normal password flow
+        // Vérifier mot de passe normal
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) {
-            console.log('Mot de passe invalide');
             return res.status(401).json({ success: false, message: 'Identifiants invalides' });
         }
-        // Génération du token JWT
 
         const token = jwt.sign(
             {
@@ -102,6 +85,20 @@ router.post('/', async (req, res) => {
             { expiresIn: '8h' }
         );
 
+        // Récupérer les informations de l'étudiant si applicable
+        let studentInfo = {};
+        if (user.role === 'ETUDIANT') {
+            const [studentRows] = await connection.execute(
+                'SELECT * FROM etudiants WHERE userId = ?',
+                [user.id]
+            );
+            if (studentRows.length > 0) {
+                studentInfo = {
+                    nom: studentRows[0].nom,
+                    prenom: studentRows[0].prenom
+                };
+            }
+        }
 
         res.json({
             success: true,
@@ -113,20 +110,17 @@ router.post('/', async (req, res) => {
                     id: user.id,
                     email: user.email,
                     role: user.role,
-                    nom: user.etudiant?.nom || '',
-                    prenom: user.etudiant?.prenom || ''
+                    ...studentInfo
                 }
             }
         });
-
-        console.log('=== FIN LOGIN SUCCÈS ===');
     } catch (error) {
         console.error('ERREUR LOGIN:', error);
         res.status(500).json({ success: false, message: 'Erreur serveur lors de la connexion' });
     }
 });
 
-// --- Temporary login handler (identifiantTemporaire + temp password) ---
+// Gestionnaire de connexion temporaire
 const handleTemporaryLogin = async (req, res) => {
     try {
         const { identifiantTemporaire, password } = req.body;
@@ -134,10 +128,8 @@ const handleTemporaryLogin = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Identifiant temporaire et mot de passe requis' });
         }
 
-        // Validate via service (checks expiry + hash)
         const student = await PasswordResetService.validateTemporaryCredentials(identifiantTemporaire, password);
 
-        // Generate short-lived token (temp login)
         const token = jwt.sign(
             {
                 id: student.user.id,
@@ -146,14 +138,14 @@ const handleTemporaryLogin = async (req, res) => {
                 requirePasswordChange: true
             },
             JWT_SECRET,
-            { expiresIn: JWT_EXPIRES_TEMP } // 1h expiration for temp login
+            { expiresIn: JWT_EXPIRES_TEMP }
         );
 
         return res.json({
             success: true,
             message: 'Connexion temporaire réussie - Changement de mot de passe requis',
             data: {
-                token,                  // nom uniforme
+                token,
                 requirePasswordChange: true,
                 user: {
                     id: student.user.id,
@@ -177,12 +169,13 @@ const handleTemporaryLogin = async (req, res) => {
     }
 };
 
-// --- Change password after temporary login ---
-// Now if user.requirePasswordChange === true, we allow sending only { newPassword, confirmPassword }
-// without requiring currentPassword. If requirePasswordChange is false, currentPassword is required.
+// POST /auth/change-password-temporary
 router.post('/change-password-temporary', authenticateToken, async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { newPassword, confirmPassword, currentPassword } = req.body;
+
         if (!newPassword || !confirmPassword) {
             return res.status(400).json({ success: false, message: 'Tous les champs requis' });
         }
@@ -193,21 +186,25 @@ router.post('/change-password-temporary', authenticateToken, async (req, res) =>
             return res.status(400).json({ success: false, message: 'Le mot de passe doit contenir au moins 8 caractères' });
         }
 
-        const user = await prisma.user.findUnique({
-            where: { id: req.user.id },
-            select: { id: true, tempPassword: true, password: true, requirePasswordChange: true }
-        });
+        const [userRows] = await connection.execute(
+            'SELECT id, tempPassword, password, requirePasswordChange FROM users WHERE id = ?',
+            [req.user.id]
+        );
 
-        if (!user) return res.status(404).json({ success: false, message: 'Utilisateur introuvable' });
+        if (userRows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Utilisateur introuvable' });
+        }
 
-        // If requirePasswordChange is true -> we do not require currentPassword,
-        // but we still ensure that tempPassword existed and was valid at login time.
+        const user = userRows[0];
+
         if (user.requirePasswordChange) {
-            // simply complete reset
             await PasswordResetService.completePasswordReset(user.id, newPassword);
 
-            // issue new token without flag
-            const newToken = jwt.sign({ id: user.id, role: req.user.role, requirePasswordChange: false }, JWT_SECRET, { expiresIn: JWT_EXPIRES_NORMAL });
+            const newToken = jwt.sign(
+                { id: user.id, role: req.user.role, requirePasswordChange: false },
+                JWT_SECRET,
+                { expiresIn: JWT_EXPIRES_NORMAL }
+            );
 
             return res.json({
                 success: true,
@@ -216,7 +213,6 @@ router.post('/change-password-temporary', authenticateToken, async (req, res) =>
             });
         }
 
-        // Otherwise: standard flow requires currentPassword
         if (!currentPassword) {
             return res.status(400).json({ success: false, message: 'Mot de passe actuel requis' });
         }
@@ -226,13 +222,11 @@ router.post('/change-password-temporary', authenticateToken, async (req, res) =>
             return res.status(401).json({ success: false, message: 'Mot de passe actuel incorrect' });
         }
 
-        // Prevent using same password
         const isSame = await bcrypt.compare(newPassword, user.password);
         if (isSame) {
             return res.status(400).json({ success: false, message: 'Le nouveau mot de passe doit être différent de l\'ancien' });
         }
 
-        // Use PasswordResetService.completePasswordReset to standardize
         await PasswordResetService.completePasswordReset(user.id, newPassword);
 
         return res.json({ success: true, message: 'Mot de passe changé avec succès' });
@@ -242,9 +236,11 @@ router.post('/change-password-temporary', authenticateToken, async (req, res) =>
     }
 });
 
-// --- Change password normal (user authenticated) ---
+// POST /auth/change-password
 router.post('/change-password', authenticateToken, async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { currentPassword, newPassword, confirmPassword } = req.body;
 
         if (!currentPassword || !newPassword || !confirmPassword) {
@@ -257,23 +253,32 @@ router.post('/change-password', authenticateToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Le mot de passe doit contenir au moins 8 caractères' });
         }
 
-        const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { id: true, password: true, role: true } });
-        if (!user) return res.status(404).json({ success: false, message: 'Utilisateur introuvable' });
+        const [userRows] = await connection.execute(
+            'SELECT id, password FROM users WHERE id = ?',
+            [req.user.id]
+        );
 
-        // Vérifier l'ancien mot de passe
+        if (userRows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Utilisateur introuvable' });
+        }
+
+        const user = userRows[0];
+
         const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
         if (!isCurrentPasswordValid) {
             return res.status(401).json({ success: false, message: 'Mot de passe actuel incorrect' });
         }
 
-        // Vérifier que le nouveau mot de passe est différent de l'ancien
         const isSamePassword = await bcrypt.compare(newPassword, user.password);
         if (isSamePassword) {
             return res.status(400).json({ success: false, message: 'Le nouveau mot de passe doit être différent de l\'ancien' });
         }
 
         const hashedPassword = await bcrypt.hash(newPassword, 10);
-        await prisma.user.update({ where: { id: req.user.id }, data: { password: hashedPassword } });
+        await connection.execute(
+            'UPDATE users SET password = ? WHERE id = ?',
+            [hashedPassword, req.user.id]
+        );
 
         return res.json({ success: true, message: 'Mot de passe changé avec succès' });
     } catch (error) {
@@ -282,20 +287,31 @@ router.post('/change-password', authenticateToken, async (req, res) => {
     }
 });
 
-// --- Forgot password (send reset email) ---
+// POST /auth/forgot-password
 router.post('/forgot-password', async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { email } = req.body;
         if (!email) return res.status(400).json({ success: false, message: 'Email requis' });
 
-        const user = await prisma.user.findUnique({ where: { email }, include: { etudiant: true } });
+        const [userRows] = await connection.execute(
+            'SELECT u.*, e.nom, e.prenom FROM users u LEFT JOIN etudiants e ON u.id = e.userId WHERE u.email = ?',
+            [email]
+        );
 
-        // pour sécurité on donne toujours le même message
-        if (!user || user.role !== 'ETUDIANT') {
+        if (userRows.length === 0 || userRows[0].role !== 'ETUDIANT') {
             return res.json({ success: true, message: 'Si cet email existe dans notre système, un lien de réinitialisation a été envoyé' });
         }
 
-        const resetToken = jwt.sign({ userId: user.id, type: 'password_reset', email: user.email }, JWT_SECRET, { expiresIn: '1h' });
+        const user = userRows[0];
+
+        const resetToken = jwt.sign(
+            { userId: user.id, type: 'password_reset', email: user.email },
+            JWT_SECRET,
+            { expiresIn: '1h' }
+        );
+
         const resetLink = `${process.env.FRONTEND_URL}/reset-password.html?token=${resetToken}`;
 
         const mailOptions = {
@@ -303,16 +319,16 @@ router.post('/forgot-password', async (req, res) => {
             to: email,
             subject: 'Réinitialisation de votre mot de passe - UCAO-UUC',
             html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color:#800020;">Réinitialisation de mot de passe</h2>
-          <p>Bonjour ${user.etudiant?.prenom || 'Étudiant'},</p>
-          <p>Pour créer un nouveau mot de passe, cliquez sur le bouton ci-dessous :</p>
-          <div style="text-align:center; margin:30px 0;">
-            <a href="${resetLink}" style="background-color:#800020;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Réinitialiser mon mot de passe</a>
-          </div>
-          <p>Ce lien est valable pendant <strong>1 heure</strong>.</p>
-          <p>Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
-        </div>`
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color:#800020;">Réinitialisation de mot de passe</h2>
+                    <p>Bonjour ${user.prenom || 'Étudiant'},</p>
+                    <p>Pour créer un nouveau mot de passe, cliquez sur le bouton ci-dessous :</p>
+                    <div style="text-align:center; margin:30px 0;">
+                        <a href="${resetLink}" style="background-color:#800020;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Réinitialiser mon mot de passe</a>
+                    </div>
+                    <p>Ce lien est valable pendant <strong>1 heure</strong>.</p>
+                    <p>Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
+                </div>`
         };
 
         await transporter.sendMail(mailOptions);
@@ -324,9 +340,11 @@ router.post('/forgot-password', async (req, res) => {
     }
 });
 
-// --- Reset password via token (from forgot-password email) ---
+// POST /auth/reset-password
 router.post('/reset-password', async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { token, newPassword, confirmPassword } = req.body;
         if (!token || !newPassword || !confirmPassword) return res.status(400).json({ success: false, message: 'Tous les champs sont requis' });
         if (newPassword !== confirmPassword) return res.status(400).json({ success: false, message: 'Les mots de passe ne correspondent pas' });
@@ -341,20 +359,16 @@ router.post('/reset-password', async (req, res) => {
 
         if (decoded.type !== 'password_reset') return res.status(401).json({ success: false, message: 'Token invalide' });
 
-        const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
-        if (!user) return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+        const [userRows] = await connection.execute('SELECT * FROM users WHERE id = ?', [decoded.userId]);
+        if (userRows.length === 0) return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
 
-        // Hash and update password; clear any temporary fields and flag
+        const user = userRows[0];
+
         const hashedPassword = await bcrypt.hash(newPassword, 10);
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                password: hashedPassword,
-                tempPassword: null,
-                requirePasswordChange: false,
-                passwordResetExpires: null
-            }
-        });
+        await connection.execute(
+            'UPDATE users SET password = ?, tempPassword = NULL, requirePasswordChange = FALSE, passwordResetExpires = NULL WHERE id = ?',
+            [hashedPassword, user.id]
+        );
 
         return res.json({ success: true, message: 'Mot de passe réinitialisé avec succès' });
     } catch (error) {

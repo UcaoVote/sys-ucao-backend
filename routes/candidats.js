@@ -1,63 +1,53 @@
 import express from 'express';
-import prisma from '../prisma.js';
+import pool from '../database.js';
 import { authenticateToken } from '../middlewares/auth.js';
 
 const router = express.Router();
 
-
 // Récupérer tous les candidats d'une élection spécifique
 router.get('/election/:electionId', authenticateToken, async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { electionId } = req.params;
 
-        const election = await prisma.election.findUnique({
-            where: { id: parseInt(electionId) }
-        });
+        // Vérifier que l'élection existe
+        const [electionRows] = await connection.execute(
+            'SELECT id, titre, type FROM elections WHERE id = ?',
+            [parseInt(electionId)]
+        );
 
-        if (!election) {
+        if (electionRows.length === 0) {
             return res.status(404).json({
                 message: 'Élection non trouvée'
             });
         }
 
-        const candidates = await prisma.candidate.findMany({
-            where: {
-                electionId: parseInt(electionId),
-                statut: 'APPROUVE' // Seulement les candidats approuvés
-            },
-            include: {
-                user: {
-                    include: {
-                        etudiant: {
-                            select: {
-                                nom: true,
-                                prenom: true,
-                                filiere: true,
-                                annee: true,
-                                ecole: true,
-                                photoUrl: true
-                            }
-                        }
-                    }
-                },
-                election: {
-                    select: {
-                        titre: true,
-                        type: true
-                    }
-                },
-                _count: {
-                    select: {
-                        votes: true
-                    }
-                }
-            },
-            orderBy: {
-                createdAt: 'desc'
-            }
-        });
+        // Récupérer les candidats approuvés
+        const [candidateRows] = await connection.execute(`
+            SELECT 
+                c.*,
+                u.email,
+                e.nom as etudiant_nom,
+                e.prenom as etudiant_prenom,
+                e.filiere,
+                e.annee,
+                e.ecole,
+                e.photoUrl as etudiant_photoUrl,
+                el.titre as election_titre,
+                el.type as election_type,
+                COUNT(v.id) as votes_count
+            FROM candidates c
+            LEFT JOIN users u ON c.user_id = u.id
+            LEFT JOIN etudiants e ON u.id = e.user_id
+            LEFT JOIN elections el ON c.election_id = el.id
+            LEFT JOIN votes v ON c.id = v.candidate_id
+            WHERE c.election_id = ? AND c.statut = 'APPROUVE'
+            GROUP BY c.id
+            ORDER BY c.created_at DESC
+        `, [parseInt(electionId)]);
 
-        const formattedCandidates = candidates.map(candidate => ({
+        const formattedCandidates = candidateRows.map(candidate => ({
             id: candidate.id,
             nom: candidate.nom,
             prenom: candidate.prenom,
@@ -66,29 +56,29 @@ router.get('/election/:electionId', authenticateToken, async (req, res) => {
             motivation: candidate.motivation,
             photoUrl: candidate.photoUrl,
             statut: candidate.statut,
-            createdAt: candidate.createdAt,
-            userDetails: candidate.user.etudiant ? {
-                filiere: candidate.user.etudiant.filiere,
-                annee: candidate.user.etudiant.annee,
-                ecole: candidate.user.etudiant.ecole,
-                photoUrl: candidate.user.etudiant.photoUrl
+            createdAt: candidate.created_at,
+            userDetails: candidate.etudiant_nom ? {
+                filiere: candidate.filiere,
+                annee: candidate.annee,
+                ecole: candidate.ecole,
+                photoUrl: candidate.etudiant_photoUrl
             } : null,
             electionDetails: {
-                titre: candidate.election.titre,
-                type: candidate.election.type
+                titre: candidate.election_titre,
+                type: candidate.election_type
             },
-            votesCount: candidate._count.votes
+            votesCount: candidate.votes_count
         }));
 
         res.json({
             success: true,
             election: {
-                id: election.id,
-                titre: election.titre,
-                type: election.type
+                id: electionRows[0].id,
+                titre: electionRows[0].titre,
+                type: electionRows[0].type
             },
             candidates: formattedCandidates,
-            totalCandidates: candidates.length
+            totalCandidates: candidateRows.length
         });
 
     } catch (error) {
@@ -97,57 +87,58 @@ router.get('/election/:electionId', authenticateToken, async (req, res) => {
             success: false,
             message: 'Erreur serveur lors de la récupération des candidats'
         });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
-// Vérifier si l'utilisateur est déjà candidat à une élection (avec détails)
+// Vérifier si l'utilisateur est déjà candidat à une élection
 router.get('/is-candidate/:electionId', authenticateToken, async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { electionId } = req.params;
 
         // Vérifier que l'élection existe
-        const election = await prisma.election.findUnique({
-            where: { id: parseInt(electionId) }
-        });
+        const [electionRows] = await connection.execute(
+            'SELECT id, titre, type FROM elections WHERE id = ?',
+            [parseInt(electionId)]
+        );
 
-        if (!election) {
+        if (electionRows.length === 0) {
             return res.status(404).json({
                 message: 'Élection non trouvée',
                 isCandidate: false
             });
         }
 
-        // Vérifier si l'utilisateur est déjà candidat pour cette élection
-        const existingCandidate = await prisma.candidate.findFirst({
-            where: {
-                userId: req.user.id,
-                electionId: parseInt(electionId)
-            },
-            include: {
-                election: {
-                    select: {
-                        titre: true,
-                        type: true
-                    }
-                }
-            }
-        });
+        // Vérifier si l'utilisateur est déjà candidat
+        const [candidateRows] = await connection.execute(`
+            SELECT 
+                c.*,
+                el.titre as election_titre,
+                el.type as election_type
+            FROM candidates c
+            LEFT JOIN elections el ON c.election_id = el.id
+            WHERE c.user_id = ? AND c.election_id = ?
+        `, [req.user.id, parseInt(electionId)]);
 
-        if (existingCandidate) {
+        if (candidateRows.length > 0) {
+            const candidate = candidateRows[0];
             res.json({
                 isCandidate: true,
                 candidate: {
-                    id: existingCandidate.id,
-                    nom: existingCandidate.nom,
-                    prenom: existingCandidate.prenom,
-                    program: existingCandidate.program,
-                    photoUrl: existingCandidate.photoUrl,
-                    createdAt: existingCandidate.createdAt
+                    id: candidate.id,
+                    nom: candidate.nom,
+                    prenom: candidate.prenom,
+                    programme: candidate.programme,
+                    photoUrl: candidate.photoUrl,
+                    createdAt: candidate.created_at
                 },
                 election: {
-                    id: existingCandidate.election.id,
-                    titre: existingCandidate.election.titre,
-                    type: existingCandidate.election.type
+                    id: candidate.election_id,
+                    titre: candidate.election_titre,
+                    type: candidate.election_type
                 }
             });
         } else {
@@ -163,43 +154,39 @@ router.get('/is-candidate/:electionId', authenticateToken, async (req, res) => {
             message: 'Erreur serveur',
             isCandidate: false
         });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
-// GET /api/candidats/mes-candidatures - Récupérer les candidatures de l'étudiant connecté
+// Récupérer les candidatures de l'étudiant connecté
 router.get('/mes-candidatures', authenticateToken, async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const userId = req.user.id;
 
         // Récupérer les candidatures de l'utilisateur
-        const candidatures = await prisma.candidate.findMany({
-            where: {
-                userId: userId
-            },
-            include: {
-                election: {
-                    select: {
-                        id: true,
-                        titre: true,
-                        type: true,
-                        description: true,
-                        dateDebut: true,
-                        dateFin: true
-                    }
-                },
-                _count: {
-                    select: {
-                        votes: true
-                    }
-                }
-            },
-            orderBy: {
-                createdAt: 'desc'
-            }
-        });
+        const [candidatureRows] = await connection.execute(`
+            SELECT 
+                c.*,
+                el.id as election_id,
+                el.titre as election_titre,
+                el.type as election_type,
+                el.description as election_description,
+                el.date_debut as election_dateDebut,
+                el.date_fin as election_dateFin,
+                COUNT(v.id) as votes_count
+            FROM candidates c
+            LEFT JOIN elections el ON c.election_id = el.id
+            LEFT JOIN votes v ON c.id = v.candidate_id
+            WHERE c.user_id = ?
+            GROUP BY c.id
+            ORDER BY c.created_at DESC
+        `, [userId]);
 
         // Formater la réponse
-        const formattedCandidatures = candidatures.map(candidature => ({
+        const formattedCandidatures = candidatureRows.map(candidature => ({
             id: candidature.id,
             nom: candidature.nom,
             prenom: candidature.prenom,
@@ -208,16 +195,23 @@ router.get('/mes-candidatures', authenticateToken, async (req, res) => {
             motivation: candidature.motivation,
             photoUrl: candidature.photoUrl,
             statut: candidature.statut,
-            createdAt: candidature.createdAt,
-            updatedAt: candidature.updatedAt,
-            election: candidature.election,
-            votesCount: candidature._count.votes
+            createdAt: candidature.created_at,
+            updatedAt: candidature.updated_at,
+            election: {
+                id: candidature.election_id,
+                titre: candidature.election_titre,
+                type: candidature.election_type,
+                description: candidature.election_description,
+                dateDebut: candidature.election_dateDebut,
+                dateFin: candidature.election_dateFin
+            },
+            votesCount: candidature.votes_count
         }));
 
         res.json({
             success: true,
             candidatures: formattedCandidatures,
-            total: candidatures.length
+            total: candidatureRows.length
         });
 
     } catch (error) {
@@ -226,56 +220,92 @@ router.get('/mes-candidatures', authenticateToken, async (req, res) => {
             success: false,
             message: 'Erreur serveur lors de la récupération des candidatures'
         });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
-// GET /api/candidats/:id - Récupérer un candidat spécifique
+// Récupérer un candidat spécifique
 router.get('/:id', async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const candidateId = parseInt(req.params.id);
 
         if (isNaN(candidateId)) {
             return res.status(400).json({ message: 'ID de candidat invalide' });
         }
 
-        const candidate = await prisma.candidate.findUnique({
-            where: { id: candidateId },
-            include: {
-                user: {
-                    include: {
-                        etudiant: true
-                    }
-                },
-                election: true,
-                _count: {
-                    select: {
-                        votes: true
-                    }
-                }
-            }
-        });
+        const [candidateRows] = await connection.execute(`
+            SELECT 
+                c.*,
+                u.email,
+                e.nom as etudiant_nom,
+                e.prenom as etudiant_prenom,
+                e.filiere,
+                e.annee,
+                e.ecole,
+                e.photoUrl as etudiant_photoUrl,
+                el.titre as election_titre,
+                el.type as election_type,
+                COUNT(v.id) as votes_count
+            FROM candidates c
+            LEFT JOIN users u ON c.user_id = u.id
+            LEFT JOIN etudiants e ON u.id = e.user_id
+            LEFT JOIN elections el ON c.election_id = el.id
+            LEFT JOIN votes v ON c.id = v.candidate_id
+            WHERE c.id = ?
+            GROUP BY c.id
+        `, [candidateId]);
 
-        if (!candidate) {
+        if (candidateRows.length === 0) {
             return res.status(404).json({ message: 'Candidat non trouvé' });
         }
 
-        res.json(candidate);
+        const candidate = candidateRows[0];
+        res.json({
+            id: candidate.id,
+            nom: candidate.nom,
+            prenom: candidate.prenom,
+            slogan: candidate.slogan,
+            programme: candidate.programme,
+            motivation: candidate.motivation,
+            photoUrl: candidate.photoUrl,
+            statut: candidate.statut,
+            createdAt: candidate.created_at,
+            user: {
+                email: candidate.email,
+                etudiant: candidate.etudiant_nom ? {
+                    nom: candidate.etudiant_nom,
+                    prenom: candidate.etudiant_prenom,
+                    filiere: candidate.filiere,
+                    annee: candidate.annee,
+                    ecole: candidate.ecole,
+                    photoUrl: candidate.etudiant_photoUrl
+                } : null
+            },
+            election: {
+                titre: candidate.election_titre,
+                type: candidate.election_type
+            },
+            votesCount: candidate.votes_count
+        });
 
     } catch (error) {
         console.error('Error fetching candidate:', error);
         res.status(500).json({ message: 'Erreur serveur' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
-// Déposer une candidature à une élection 
+// Déposer une candidature à une élection
 router.post('/', authenticateToken, async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { electionId, slogan, photo, programme, motivation } = req.body;
         const userId = req.user.id;
-
-        console.log('=== DÉBUT CANDIDATURE ===');
-        console.log('User ID:', userId);
-        console.log('Election ID:', electionId);
 
         // Validation des champs requis
         if (!userId || !electionId || !slogan || !photo || !programme || !motivation) {
@@ -286,12 +316,14 @@ router.post('/', authenticateToken, async (req, res) => {
         }
 
         // Vérifier que l'utilisateur existe
-        const user = await prisma.user.findUnique({
-            where: { id: userId },
-            include: { etudiant: true }
-        });
+        const [userRows] = await connection.execute(`
+            SELECT u.*, e.nom, e.prenom 
+            FROM users u 
+            LEFT JOIN etudiants e ON u.id = e.user_id 
+            WHERE u.id = ?
+        `, [userId]);
 
-        if (!user) {
+        if (userRows.length === 0) {
             return res.status(400).json({
                 success: false,
                 message: 'Utilisateur inexistant'
@@ -299,62 +331,45 @@ router.post('/', authenticateToken, async (req, res) => {
         }
 
         // Vérifier que l'élection existe
-        const election = await prisma.election.findUnique({
-            where: { id: parseInt(electionId) }
-        });
+        const [electionRows] = await connection.execute(
+            'SELECT id FROM elections WHERE id = ?',
+            [parseInt(electionId)]
+        );
 
-        if (!election) {
+        if (electionRows.length === 0) {
             return res.status(400).json({
                 success: false,
                 message: 'Élection inexistante'
             });
         }
 
-        // Vérifier que l'utilisateur n'est pas déjà candidat à cette élection
-        const existingCandidate = await prisma.candidate.findFirst({
-            where: { userId, electionId: parseInt(electionId) }
-        });
+        // Vérifier que l'utilisateur n'est pas déjà candidat
+        const [existingCandidateRows] = await connection.execute(
+            'SELECT id FROM candidates WHERE user_id = ? AND election_id = ?',
+            [userId, parseInt(electionId)]
+        );
 
-        if (existingCandidate) {
+        if (existingCandidateRows.length > 0) {
             return res.status(400).json({
                 success: false,
                 message: 'Vous êtes déjà candidat à cette élection.'
             });
         }
 
-        // RÉSOLUTION DU PROBLÈME : Validation des champs nom et prenom
-        let nom = user.etudiant?.nom;
-        let prenom = user.etudiant?.prenom;
+        // Récupérer nom et prénom
+        const user = userRows[0];
+        let nom = user.nom || 'Candidat';
+        let prenom = user.prenom || 'Étudiant';
 
-        // Si les champs sont manquants dans etudiant, utilisez des valeurs par défaut valides
-        if (!nom || nom.trim().length === 0) {
-            nom = 'Candidat';
-            console.log('⚠️ Nom manquant, utilisation de valeur par défaut');
-        }
-
-        if (!prenom || prenom.trim().length === 0) {
-            prenom = 'Étudiant';
-            console.log('⚠️ Prénom manquant, utilisation de valeur par défaut');
-        }
-
-        // Valider les longueurs maximales
-        if (nom.length > 100) {
-            nom = nom.substring(0, 100);
-            console.log('⚠️ Nom tronqué à 100 caractères');
-        }
-
-        if (prenom.length > 100) {
-            prenom = prenom.substring(0, 100);
-            console.log('⚠️ Prénom tronqué à 100 caractères');
-        }
-
+        // Valider les longueurs
+        if (nom.length > 100) nom = nom.substring(0, 100);
+        if (prenom.length > 100) prenom = prenom.substring(0, 100);
         if (slogan.length > 200) {
             return res.status(400).json({
                 success: false,
                 message: 'Le slogan ne doit pas dépasser 200 caractères'
             });
         }
-
         if (photo.length > 500) {
             return res.status(400).json({
                 success: false,
@@ -362,128 +377,125 @@ router.post('/', authenticateToken, async (req, res) => {
             });
         }
 
-        console.log('📝 Données finales:', { nom, prenom, slogan: slogan.length, photo: photo.length });
-
         // Créer la candidature
-        const candidate = await prisma.candidate.create({
-            data: {
-                nom,
-                prenom,
-                slogan,
-                programme,
-                motivation,
-                photoUrl: photo,
-                userId,
-                electionId: parseInt(electionId),
-                statut: 'EN_ATTENTE'
-            }
-        });
-
-        console.log('✅ Candidature créée avec succès:', candidate.id);
+        const [result] = await connection.execute(`
+            INSERT INTO candidates (nom, prenom, slogan, programme, motivation, photo_url, user_id, election_id, statut, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'EN_ATTENTE', NOW(), NOW())
+        `, [nom, prenom, slogan, programme, motivation, photo, userId, parseInt(electionId)]);
 
         res.status(201).json({
             success: true,
             message: 'Candidature déposée avec succès',
-            candidate
+            candidate: { id: result.insertId }
         });
 
     } catch (error) {
         console.error('❌ Erreur création candidature:', error);
-
-        // Log détaillé pour Prisma
-        if (error.code === 'P2002') {
-            console.error('❌ Violation de contrainte unique');
-        }
-        if (error.meta) {
-            console.error('❌ Meta erreur:', error.meta);
-        }
-
         res.status(500).json({
             success: false,
-            message: 'Erreur serveur lors de la création de la candidature',
-            error: process.env.NODE_ENV === 'development' ? {
-                message: error.message,
-                code: error.code,
-                meta: error.meta
-            } : undefined
+            message: 'Erreur serveur lors de la création de la candidature'
         });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
-
-
-router.put('/candidats/:id', authenticateToken, async (req, res) => {
-    // Logique de modification
-});
-
-router.delete('/candidats/:id', authenticateToken, async (req, res) => {
-    // Logique de suppression
-});
-
-// Mise à jour du programme d'un candidat (propriétaire)
+// Mise à jour du programme d'un candidat
 router.put('/:candidateId/programme', authenticateToken, async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const candidateId = parseInt(req.params.candidateId);
         const { programme } = req.body;
+
         if (isNaN(candidateId) || !programme) {
             return res.status(400).json({ message: 'Paramètres invalides' });
         }
-        const candidate = await prisma.candidate.findUnique({ where: { id: candidateId } });
-        if (!candidate) return res.status(404).json({ message: 'Candidat introuvable' });
-        if (candidate.userId !== req.user.id) return res.status(403).json({ message: 'Non autorisé' });
-        const updated = await prisma.candidate.update({ where: { id: candidateId }, data: { programme } });
-        res.json({ message: 'Programme mis à jour', candidate: updated });
+
+        // Vérifier que le candidat existe et appartient à l'utilisateur
+        const [candidateRows] = await connection.execute(
+            'SELECT id, user_id FROM candidates WHERE id = ?',
+            [candidateId]
+        );
+
+        if (candidateRows.length === 0) {
+            return res.status(404).json({ message: 'Candidat introuvable' });
+        }
+
+        if (candidateRows[0].user_id !== req.user.id) {
+            return res.status(403).json({ message: 'Non autorisé' });
+        }
+
+        // Mettre à jour le programme
+        await connection.execute(
+            'UPDATE candidates SET programme = ?, updated_at = NOW() WHERE id = ?',
+            [programme, candidateId]
+        );
+
+        res.json({ message: 'Programme mis à jour' });
+
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Erreur serveur' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
-
-// GET /api/candidats - Liste des candidats 
+// Liste des candidats avec pagination
 router.get('/', async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { electionId, page = 1, limit = 10 } = req.query;
 
         // Construction de la clause WHERE
-        const whereClause = {};
+        let whereClause = '1=1';
+        let params = [];
+
         if (electionId) {
-            whereClause.electionId = parseInt(electionId);
+            whereClause += ' AND c.election_id = ?';
+            params.push(parseInt(electionId));
         }
 
         // Pagination
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-        const take = parseInt(limit);
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        params.push(parseInt(limit), offset);
 
-        const [candidates, total] = await Promise.all([
-            prisma.candidate.findMany({
-                where: whereClause,
-                include: {
-                    user: {
-                        include: {
-                            etudiant: true
-                        }
-                    },
-                    election: true,
-                    _count: {
-                        select: {
-                            votes: true
-                        }
-                    }
-                },
-                orderBy: {
-                    nom: 'asc'
-                },
-                skip,
-                take
-            }),
-            prisma.candidate.count({ where: whereClause })
-        ]);
+        const [candidateRows] = await connection.execute(`
+            SELECT 
+                c.*,
+                u.email,
+                e.nom as etudiant_nom,
+                e.prenom as etudiant_prenom,
+                e.filiere,
+                e.annee,
+                e.ecole,
+                e.photoUrl as etudiant_photoUrl,
+                el.titre as election_titre,
+                el.type as election_type,
+                COUNT(v.id) as votes_count
+            FROM candidates c
+            LEFT JOIN users u ON c.user_id = u.id
+            LEFT JOIN etudiants e ON u.id = e.user_id
+            LEFT JOIN elections el ON c.election_id = el.id
+            LEFT JOIN votes v ON c.id = v.candidate_id
+            WHERE ${whereClause}
+            GROUP BY c.id
+            ORDER BY c.nom ASC
+            LIMIT ? OFFSET ?
+        `, params);
 
+        // Compter le total
+        const [countRows] = await connection.execute(`
+            SELECT COUNT(*) as total FROM candidates c WHERE ${whereClause}
+        `, electionId ? [parseInt(electionId)] : []);
+
+        const total = countRows[0].total;
         const totalPages = Math.ceil(total / parseInt(limit));
 
         res.json({
-            candidates,
+            candidates: candidateRows,
             pagination: {
                 currentPage: parseInt(page),
                 totalPages,
@@ -496,19 +508,24 @@ router.get('/', async (req, res) => {
     } catch (error) {
         console.error('Error fetching candidates:', error);
         res.status(500).json({ message: 'Erreur serveur' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
-// PUT /api/candidats/:id - Modifier un candidat (Admin seulement)
+// Modifier un candidat (Admin seulement)
 router.put('/:id', authenticateToken, async (req, res) => {
+    let connection;
     try {
-        // Vérifier que l'utilisateur est admin
-        const user = await prisma.user.findUnique({
-            where: { id: req.user.id },
-            include: { admin: true }
-        });
+        connection = await pool.getConnection();
 
-        if (!user || user.role !== 'ADMIN') {
+        // Vérifier que l'utilisateur est admin
+        const [userRows] = await connection.execute(
+            'SELECT role FROM users WHERE id = ?',
+            [req.user.id]
+        );
+
+        if (userRows.length === 0 || userRows[0].role !== 'ADMIN') {
             return res.status(403).json({ message: 'Accès refusé' });
         }
 
@@ -519,42 +536,75 @@ router.put('/:id', authenticateToken, async (req, res) => {
             return res.status(400).json({ message: 'ID de candidat invalide' });
         }
 
-        const candidate = await prisma.candidate.update({
-            where: { id: candidateId },
-            data: {
-                ...(nom && { nom }),
-                ...(prenom && { prenom }),
-                ...(programme !== undefined && { programme }),
-                ...(photoUrl !== undefined && { photoUrl })
-            },
-            include: {
-                user: {
-                    include: {
-                        etudiant: true
-                    }
-                },
-                election: true
-            }
-        });
+        // Construire la requête de mise à jour dynamiquement
+        let updateFields = [];
+        let updateValues = [];
 
-        res.json({ message: 'Candidat mis à jour avec succès', candidate });
+        if (nom) {
+            updateFields.push('nom = ?');
+            updateValues.push(nom);
+        }
+
+        if (prenom) {
+            updateFields.push('prenom = ?');
+            updateValues.push(prenom);
+        }
+
+        if (programme !== undefined) {
+            updateFields.push('programme = ?');
+            updateValues.push(programme);
+        }
+
+        if (photoUrl !== undefined) {
+            updateFields.push('photo_url = ?');
+            updateValues.push(photoUrl);
+        }
+
+        if (updateFields.length === 0) {
+            return res.status(400).json({ message: 'Aucun champ à mettre à jour' });
+        }
+
+        updateValues.push(candidateId);
+
+        await connection.execute(`
+            UPDATE candidates SET ${updateFields.join(', ')}, updated_at = NOW() WHERE id = ?
+        `, updateValues);
+
+        // Récupérer le candidat mis à jour
+        const [updatedCandidateRows] = await connection.execute(`
+            SELECT c.*, u.email, e.* 
+            FROM candidates c
+            LEFT JOIN users u ON c.user_id = u.id
+            LEFT JOIN etudiants e ON u.id = e.user_id
+            WHERE c.id = ?
+        `, [candidateId]);
+
+        res.json({
+            message: 'Candidat mis à jour avec succès',
+            candidate: updatedCandidateRows[0]
+        });
 
     } catch (error) {
         console.error('Error updating candidate:', error);
         res.status(500).json({ message: 'Erreur serveur' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
-// DELETE /api/candidats/:id - Supprimer un candidat (Admin seulement)
+// Supprimer un candidat (Admin seulement)
 router.delete('/:id', authenticateToken, async (req, res) => {
+    let connection;
     try {
-        // Vérifier que l'utilisateur est admin
-        const user = await prisma.user.findUnique({
-            where: { id: req.user.id },
-            include: { admin: true }
-        });
+        connection = await pool.getConnection();
 
-        if (!user || user.role !== 'ADMIN') {
+        // Vérifier que l'utilisateur est admin
+        const [userRows] = await connection.execute(
+            'SELECT role FROM users WHERE id = ?',
+            [req.user.id]
+        );
+
+        if (userRows.length === 0 || userRows[0].role !== 'ADMIN') {
             return res.status(403).json({ message: 'Accès refusé' });
         }
 
@@ -564,29 +614,34 @@ router.delete('/:id', authenticateToken, async (req, res) => {
             return res.status(400).json({ message: 'ID de candidat invalide' });
         }
 
-        await prisma.candidate.delete({
-            where: { id: candidateId }
-        });
+        await connection.execute(
+            'DELETE FROM candidates WHERE id = ?',
+            [candidateId]
+        );
 
         res.json({ message: 'Candidat supprimé avec succès' });
 
     } catch (error) {
         console.error('Error deleting candidate:', error);
         res.status(500).json({ message: 'Erreur serveur' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
-
-// GET /api/candidats/admin/list - Liste des candidats pour l'admin avec filtres
+// Liste des candidats pour l'admin avec filtres
 router.get('/admin/list', authenticateToken, async (req, res) => {
+    let connection;
     try {
-        // Vérifier que l'utilisateur est admin
-        const user = await prisma.user.findUnique({
-            where: { id: req.user.id },
-            include: { admin: true }
-        });
+        connection = await pool.getConnection();
 
-        if (!user || user.role !== 'ADMIN') {
+        // Vérifier que l'utilisateur est admin
+        const [userRows] = await connection.execute(
+            'SELECT role FROM users WHERE id = ?',
+            [req.user.id]
+        );
+
+        if (userRows.length === 0 || userRows[0].role !== 'ADMIN') {
             return res.status(403).json({ message: 'Accès refusé' });
         }
 
@@ -599,115 +654,110 @@ router.get('/admin/list', authenticateToken, async (req, res) => {
         } = req.query;
 
         // Construction de la clause WHERE
-        const whereClause = {};
+        let whereClause = '1=1';
+        let params = [];
 
         if (electionId && electionId !== 'all') {
-            whereClause.electionId = parseInt(electionId);
+            whereClause += ' AND c.election_id = ?';
+            params.push(parseInt(electionId));
         }
 
         if (statut && statut !== 'all') {
-            whereClause.statut = statut;
+            whereClause += ' AND c.statut = ?';
+            params.push(statut);
         }
 
         if (search) {
-            whereClause.OR = [
-                { nom: { contains: search, mode: 'insensitive' } },
-                { prenom: { contains: search, mode: 'insensitive' } },
-                {
-                    user: {
-                        email: { contains: search, mode: 'insensitive' },
-                        etudiant: {
-                            OR: [
-                                { matricule: { contains: search, mode: 'insensitive' } },
-                                { filiere: { contains: search, mode: 'insensitive' } }
-                            ]
-                        }
-                    }
-                },
-                { election: { titre: { contains: search, mode: 'insensitive' } } }
-            ];
+            whereClause += ` AND (
+                c.nom LIKE ? OR 
+                c.prenom LIKE ? OR 
+                u.email LIKE ? OR 
+                e.matricule LIKE ? OR 
+                e.filiere LIKE ? OR 
+                el.titre LIKE ?
+            )`;
+            const searchPattern = `%${search}%`;
+            params.push(
+                searchPattern, searchPattern, searchPattern,
+                searchPattern, searchPattern, searchPattern
+            );
         }
 
         // Pagination
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-        const take = parseInt(limit);
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        params.push(parseInt(limit), offset);
 
-        const [candidates, total] = await Promise.all([
-            prisma.candidate.findMany({
-                where: whereClause,
-                include: {
-                    user: {
-                        include: {
-                            etudiant: {
-                                select: {
-                                    id: true,
-                                    matricule: true,
-                                    filiere: true,
-                                    annee: true,
-                                    ecole: true,
-                                    photoUrl: true
-                                }
-                            }
-                        }
-                    },
-                    election: {
-                        select: {
-                            id: true,
-                            titre: true,
-                            type: true,
-                            dateDebut: true,
-                            dateFin: true
-                        }
-                    },
-                    _count: {
-                        select: {
-                            votes: true
-                        }
-                    }
-                },
-                orderBy: {
-                    createdAt: 'desc'
-                },
-                skip,
-                take
-            }),
-            prisma.candidate.count({ where: whereClause })
-        ]);
+        const [candidateRows] = await connection.execute(`
+            SELECT 
+                c.*,
+                u.email,
+                e.matricule,
+                e.filiere,
+                e.annee,
+                e.ecole,
+                e.photoUrl as etudiant_photoUrl,
+                el.id as election_id,
+                el.titre as election_titre,
+                el.type as election_type,
+                el.date_debut as election_dateDebut,
+                el.date_fin as election_dateFin,
+                COUNT(v.id) as votes_count
+            FROM candidates c
+            LEFT JOIN users u ON c.user_id = u.id
+            LEFT JOIN etudiants e ON u.id = e.user_id
+            LEFT JOIN elections el ON c.election_id = el.id
+            LEFT JOIN votes v ON c.id = v.candidate_id
+            WHERE ${whereClause}
+            GROUP BY c.id
+            ORDER BY c.created_at DESC
+            LIMIT ? OFFSET ?
+        `, params);
 
+        // Compter le total
+        const [countRows] = await connection.execute(`
+            SELECT COUNT(*) as total 
+            FROM candidates c
+            LEFT JOIN users u ON c.user_id = u.id
+            LEFT JOIN etudiants e ON u.id = e.user_id
+            LEFT JOIN elections el ON c.election_id = el.id
+            WHERE ${whereClause}
+        `, params.slice(0, -2)); // Remove limit and offset for count
+
+        const total = countRows[0].total;
         const totalPages = Math.ceil(total / parseInt(limit));
 
         // Formater la réponse
-        const formattedCandidates = candidates.map(candidate => ({
+        const formattedCandidates = candidateRows.map(candidate => ({
             id: candidate.id,
             nom: candidate.nom,
             prenom: candidate.prenom,
             slogan: candidate.slogan,
             programme: candidate.programme,
             motivation: candidate.motivation,
-            photoUrl: candidate.photoUrl,
+            photoUrl: candidate.photo_url,
             statut: candidate.statut,
-            createdAt: candidate.createdAt,
-            updatedAt: candidate.updatedAt,
+            createdAt: candidate.created_at,
+            updatedAt: candidate.updated_at,
             user: {
-                id: candidate.user.id,
-                email: candidate.user.email,
-                etudiant: candidate.user.etudiant ? {
-                    id: candidate.user.etudiant.id,
-                    matricule: candidate.user.etudiant.matricule,
-                    filiere: candidate.user.etudiant.filiere,
-                    annee: candidate.user.etudiant.annee,
-                    ecole: candidate.user.etudiant.ecole,
-                    photoUrl: candidate.user.etudiant.photoUrl
+                id: candidate.user_id,
+                email: candidate.email,
+                etudiant: candidate.matricule ? {
+                    id: candidate.etudiant_id,
+                    matricule: candidate.matricule,
+                    filiere: candidate.filiere,
+                    annee: candidate.annee,
+                    ecole: candidate.ecole,
+                    photoUrl: candidate.etudiant_photoUrl
                 } : null
             },
             election: {
-                id: candidate.election.id,
-                titre: candidate.election.titre,
-                type: candidate.election.type,
-                dateDebut: candidate.election.dateDebut,
-                dateFin: candidate.election.dateFin
+                id: candidate.election_id,
+                titre: candidate.election_titre,
+                type: candidate.election_type,
+                dateDebut: candidate.election_dateDebut,
+                dateFin: candidate.election_dateFin
             },
-            votesCount: candidate._count.votes
+            votesCount: candidate.votes_count
         }));
 
         res.json({
@@ -728,36 +778,39 @@ router.get('/admin/list', authenticateToken, async (req, res) => {
             success: false,
             message: 'Erreur serveur lors de la récupération des candidats'
         });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
-// GET /api/candidats/admin/stats - Statistiques pour l'admin
+// Statistiques pour l'admin
 router.get('/admin/stats', authenticateToken, async (req, res) => {
+    let connection;
     try {
-        // Vérifier que l'utilisateur est admin
-        const user = await prisma.user.findUnique({
-            where: { id: req.user.id },
-            include: { admin: true }
-        });
+        connection = await pool.getConnection();
 
-        if (!user || user.role !== 'ADMIN') {
+        // Vérifier que l'utilisateur est admin
+        const [userRows] = await connection.execute(
+            'SELECT role FROM users WHERE id = ?',
+            [req.user.id]
+        );
+
+        if (userRows.length === 0 || userRows[0].role !== 'ADMIN') {
             return res.status(403).json({ message: 'Accès refusé' });
         }
 
-        const [total, enAttente, approuves, rejetes] = await Promise.all([
-            prisma.candidate.count(),
-            prisma.candidate.count({ where: { statut: 'EN_ATTENTE' } }),
-            prisma.candidate.count({ where: { statut: 'APPROUVE' } }),
-            prisma.candidate.count({ where: { statut: 'REJETE' } })
-        ]);
+        const [totalRows] = await connection.execute('SELECT COUNT(*) as total FROM candidates');
+        const [enAttenteRows] = await connection.execute('SELECT COUNT(*) as count FROM candidates WHERE statut = "EN_ATTENTE"');
+        const [approuvesRows] = await connection.execute('SELECT COUNT(*) as count FROM candidates WHERE statut = "APPROUVE"');
+        const [rejetesRows] = await connection.execute('SELECT COUNT(*) as count FROM candidates WHERE statut = "REJETE"');
 
         res.json({
             success: true,
             stats: {
-                total,
-                enAttente,
-                approuves,
-                rejetes
+                total: totalRows[0].total,
+                enAttente: enAttenteRows[0].count,
+                approuves: approuvesRows[0].count,
+                rejetes: rejetesRows[0].count
             }
         });
 
@@ -767,19 +820,24 @@ router.get('/admin/stats', authenticateToken, async (req, res) => {
             success: false,
             message: 'Erreur serveur lors de la récupération des statistiques'
         });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
-// PATCH /api/candidats/:id/status - Mettre à jour le statut d'un candidat (Admin seulement)
+// Mettre à jour le statut d'un candidat (Admin seulement)
 router.patch('/:id/status', authenticateToken, async (req, res) => {
+    let connection;
     try {
-        // Vérifier que l'utilisateur est admin
-        const user = await prisma.user.findUnique({
-            where: { id: req.user.id },
-            include: { admin: true }
-        });
+        connection = await pool.getConnection();
 
-        if (!user || user.role !== 'ADMIN') {
+        // Vérifier que l'utilisateur est admin
+        const [userRows] = await connection.execute(
+            'SELECT role FROM users WHERE id = ?',
+            [req.user.id]
+        );
+
+        if (userRows.length === 0 || userRows[0].role !== 'ADMIN') {
             return res.status(403).json({ message: 'Accès refusé' });
         }
 
@@ -801,19 +859,15 @@ router.patch('/:id/status', authenticateToken, async (req, res) => {
         }
 
         // Vérifier que le candidat existe
-        const candidate = await prisma.candidate.findUnique({
-            where: { id: candidateId },
-            include: {
-                user: {
-                    include: {
-                        etudiant: true
-                    }
-                },
-                election: true
-            }
-        });
+        const [candidateRows] = await connection.execute(`
+            SELECT c.*, u.email, e.nom, e.prenom, e.matricule, e.filiere, e.annee, e.ecole
+            FROM candidates c
+            LEFT JOIN users u ON c.user_id = u.id
+            LEFT JOIN etudiants e ON u.id = e.user_id
+            WHERE c.id = ?
+        `, [candidateId]);
 
-        if (!candidate) {
+        if (candidateRows.length === 0) {
             return res.status(404).json({
                 success: false,
                 message: 'Candidat non trouvé'
@@ -821,49 +875,33 @@ router.patch('/:id/status', authenticateToken, async (req, res) => {
         }
 
         // Mettre à jour le statut
-        const updatedCandidate = await prisma.candidate.update({
-            where: { id: candidateId },
-            data: { statut },
-            include: {
-                user: {
-                    include: {
-                        etudiant: {
-                            select: {
-                                nom: true,
-                                prenom: true,
-                                matricule: true,
-                                filiere: true,
-                                annee: true,
-                                ecole: true
-                            }
-                        }
-                    }
-                },
-                election: {
-                    select: {
-                        titre: true,
-                        type: true
-                    }
-                }
-            }
-        });
+        await connection.execute(
+            'UPDATE candidates SET statut = ?, updated_at = NOW() WHERE id = ?',
+            [statut, candidateId]
+        );
 
-        // TODO: Envoyer une notification à l'étudiant
+        const candidate = candidateRows[0];
         console.log(`Statut candidature mis à jour: ${candidateId} -> ${statut}`);
 
         res.json({
             success: true,
             message: `Statut de la candidature mis à jour avec succès`,
             candidate: {
-                id: updatedCandidate.id,
-                nom: updatedCandidate.nom,
-                prenom: updatedCandidate.prenom,
-                statut: updatedCandidate.statut,
+                id: candidate.id,
+                nom: candidate.nom,
+                prenom: candidate.prenom,
+                statut: statut,
                 user: {
-                    email: updatedCandidate.user.email,
-                    etudiant: updatedCandidate.user.etudiant
-                },
-                election: updatedCandidate.election
+                    email: candidate.email,
+                    etudiant: candidate.nom ? {
+                        nom: candidate.nom,
+                        prenom: candidate.prenom,
+                        matricule: candidate.matricule,
+                        filiere: candidate.filiere,
+                        annee: candidate.annee,
+                        ecole: candidate.ecole
+                    } : null
+                }
             }
         });
 
@@ -873,19 +911,24 @@ router.patch('/:id/status', authenticateToken, async (req, res) => {
             success: false,
             message: 'Erreur serveur lors de la mise à jour du statut'
         });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
-// GET /api/candidats/admin/:id - Récupérer un candidat avec tous les détails pour l'admin
+// Récupérer un candidat avec tous les détails pour l'admin
 router.get('/admin/:id', authenticateToken, async (req, res) => {
+    let connection;
     try {
-        // Vérifier que l'utilisateur est admin
-        const user = await prisma.user.findUnique({
-            where: { id: req.user.id },
-            include: { admin: true }
-        });
+        connection = await pool.getConnection();
 
-        if (!user || user.role !== 'ADMIN') {
+        // Vérifier que l'utilisateur est admin
+        const [userRows] = await connection.execute(
+            'SELECT role FROM users WHERE id = ?',
+            [req.user.id]
+        );
+
+        if (userRows.length === 0 || userRows[0].role !== 'ADMIN') {
             return res.status(403).json({ message: 'Accès refusé' });
         }
 
@@ -895,68 +938,62 @@ router.get('/admin/:id', authenticateToken, async (req, res) => {
             return res.status(400).json({ message: 'ID de candidat invalide' });
         }
 
-        const candidate = await prisma.candidate.findUnique({
-            where: { id: candidateId },
-            include: {
-                user: {
-                    include: {
-                        etudiant: {
-                            include: {
-                                user: {
-                                    select: {
-                                        email: true,
-                                        createdAt: true
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                election: {
-                    select: {
-                        id: true,
-                        titre: true,
-                        type: true,
-                        description: true,
-                        dateDebut: true,
-                        dateFin: true,
-                        dateDebutCandidature: true,
-                        dateFinCandidature: true
-                    }
-                },
-                votes: {
-                    include: {
-                        user: {
-                            include: {
-                                etudiant: {
-                                    select: {
-                                        matricule: true,
-                                        filiere: true,
-                                        annee: true
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    orderBy: {
-                        createdAt: 'desc'
-                    },
-                    take: 10 // Derniers 10 votes
-                },
-                _count: {
-                    select: {
-                        votes: true
-                    }
-                }
-            }
-        });
+        // Récupérer les détails du candidat
+        const [candidateRows] = await connection.execute(`
+            SELECT 
+                c.*,
+                u.email,
+                u.created_at as user_created_at,
+                e.id as etudiant_id,
+                e.matricule,
+                e.nom as etudiant_nom,
+                e.prenom as etudiant_prenom,
+                e.filiere,
+                e.annee,
+                e.ecole,
+                e.photoUrl as etudiant_photoUrl,
+                el.id as election_id,
+                el.titre as election_titre,
+                el.type as election_type,
+                el.description as election_description,
+                el.date_debut as election_dateDebut,
+                el.date_fin as election_dateFin,
+                el.date_debut_candidature as election_dateDebutCandidature,
+                el.date_fin_candidature as election_dateFinCandidature,
+                COUNT(v.id) as votes_count
+            FROM candidates c
+            LEFT JOIN users u ON c.user_id = u.id
+            LEFT JOIN etudiants e ON u.id = e.user_id
+            LEFT JOIN elections el ON c.election_id = el.id
+            LEFT JOIN votes v ON c.id = v.candidate_id
+            WHERE c.id = ?
+            GROUP BY c.id
+        `, [candidateId]);
 
-        if (!candidate) {
+        if (candidateRows.length === 0) {
             return res.status(404).json({
                 success: false,
                 message: 'Candidat non trouvé'
             });
         }
+
+        // Récupérer les derniers votes
+        const [voteRows] = await connection.execute(`
+            SELECT 
+                v.*,
+                u.email,
+                e.matricule,
+                e.filiere,
+                e.annee
+            FROM votes v
+            LEFT JOIN users u ON v.user_id = u.id
+            LEFT JOIN etudiants e ON u.id = e.user_id
+            WHERE v.candidate_id = ?
+            ORDER BY v.created_at DESC
+            LIMIT 10
+        `, [candidateId]);
+
+        const candidate = candidateRows[0];
 
         // Formater la réponse
         const formattedCandidate = {
@@ -966,39 +1003,48 @@ router.get('/admin/:id', authenticateToken, async (req, res) => {
             slogan: candidate.slogan,
             programme: candidate.programme,
             motivation: candidate.motivation,
-            photoUrl: candidate.photoUrl,
+            photoUrl: candidate.photo_url,
             statut: candidate.statut,
-            createdAt: candidate.createdAt,
-            updatedAt: candidate.updatedAt,
+            createdAt: candidate.created_at,
+            updatedAt: candidate.updated_at,
             user: {
-                id: candidate.user.id,
-                email: candidate.user.email,
-                createdAt: candidate.user.createdAt,
-                etudiant: candidate.user.etudiant ? {
-                    id: candidate.user.etudiant.id,
-                    matricule: candidate.user.etudiant.matricule,
-                    nom: candidate.user.etudiant.nom,
-                    prenom: candidate.user.etudiant.prenom,
-                    filiere: candidate.user.etudiant.filiere,
-                    annee: candidate.user.etudiant.annee,
-                    ecole: candidate.user.etudiant.ecole,
-                    photoUrl: candidate.user.etudiant.photoUrl
+                id: candidate.user_id,
+                email: candidate.email,
+                createdAt: candidate.user_created_at,
+                etudiant: candidate.etudiant_id ? {
+                    id: candidate.etudiant_id,
+                    matricule: candidate.matricule,
+                    nom: candidate.etudiant_nom,
+                    prenom: candidate.etudiant_prenom,
+                    filiere: candidate.filiere,
+                    annee: candidate.annee,
+                    ecole: candidate.ecole,
+                    photoUrl: candidate.etudiant_photoUrl
                 } : null
             },
-            election: candidate.election,
-            votes: candidate.votes.map(vote => ({
+            election: {
+                id: candidate.election_id,
+                titre: candidate.election_titre,
+                type: candidate.election_type,
+                description: candidate.election_description,
+                dateDebut: candidate.election_dateDebut,
+                dateFin: candidate.election_dateFin,
+                dateDebutCandidature: candidate.election_dateDebutCandidature,
+                dateFinCandidature: candidate.election_dateFinCandidature
+            },
+            votes: voteRows.map(vote => ({
                 id: vote.id,
-                createdAt: vote.createdAt,
+                createdAt: vote.created_at,
                 user: {
-                    email: vote.user.email,
-                    etudiant: vote.user.etudiant ? {
-                        matricule: vote.user.etudiant.matricule,
-                        filiere: vote.user.etudiant.filiere,
-                        annee: vote.user.etudiant.annee
+                    email: vote.email,
+                    etudiant: vote.matricule ? {
+                        matricule: vote.matricule,
+                        filiere: vote.filiere,
+                        annee: vote.annee
                     } : null
                 }
             })),
-            votesCount: candidate._count.votes
+            votesCount: candidate.votes_count
         };
 
         res.json({
@@ -1012,8 +1058,9 @@ router.get('/admin/:id', authenticateToken, async (req, res) => {
             success: false,
             message: 'Erreur serveur lors de la récupération des détails du candidat'
         });
+    } finally {
+        if (connection) connection.release();
     }
 });
-
 
 export default router;

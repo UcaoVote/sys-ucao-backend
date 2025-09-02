@@ -1,35 +1,23 @@
 import jwt from 'jsonwebtoken';
-import User from '../models/User.js';
+import mysql from 'mysql2/promise';
 
-export const authenticateToken = async (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) {
-        return res.status(401).json({ message: 'Token manquant' });
-    }
-
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-        // Vérifier que l'user existe toujours
-        const user = await User.findById(decoded.id);
-        if (!user || !user.actif) {
-            return res.status(401).json({ message: 'Utilisateur invalide' });
-        }
-
-        req.user = decoded;
-        next();
-    } catch (error) {
-        console.error('Erreur auth middleware:', error);
-        return res.status(403).json({ message: 'Token invalide' });
-    }
+// Configuration de la connexion MySQL
+const dbConfig = {
+    host: process.env.MYSQLHOST || 'localhost',
+    user: process.env.MYSQLUSER || 'root',
+    password: process.env.MYSQLPASSWORD || '',
+    database: process.env.MYSQLDATABASE || 'election_db',
+    port: process.env.MYSQLPORT || 3306,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 };
 
 /**
  * Middleware d'authentification JWT
  */
-/*export const authenticateToken = async (req, res, next) => {
+export const authenticateToken = async (req, res, next) => {
+    let connection;
     try {
         const authHeader = req.headers['authorization'];
         const token = authHeader && authHeader.split(' ')[1];
@@ -43,20 +31,42 @@ export const authenticateToken = async (req, res, next) => {
         // Vérification du token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-        // Récupération de l'utilisateur avec ses relations
-        const user = await prisma.user.findUnique({
-            where: { id: decoded.id },
-            include: {
-                etudiant: true,
-                admin: true
-            }
-        });
+        connection = await mysql.createConnection(dbConfig);
 
-        if (!user) {
+        // Récupération de l'utilisateur avec ses relations
+        const [userRows] = await connection.execute(
+            `SELECT u.*, e.id as etudiantId, e.matricule, e.nom as etudiantNom, 
+                    e.prenom as etudiantPrenom, a.id as adminId, a.nom as adminNom, 
+                    a.prenom as adminPrenom, a.poste
+             FROM users u
+             LEFT JOIN etudiants e ON u.id = e.userId
+             LEFT JOIN admins a ON u.id = a.userId
+             WHERE u.id = ?`,
+            [decoded.id]
+        );
+
+        if (userRows.length === 0) {
             return res.status(401).json({
                 message: 'Utilisateur non trouvé'
             });
         }
+
+        const user = userRows[0];
+
+        // Construction des objets etudiant et admin
+        const etudiant = user.etudiantId ? {
+            id: user.etudiantId,
+            matricule: user.matricule,
+            nom: user.etudiantNom,
+            prenom: user.etudiantPrenom
+        } : null;
+
+        const admin = user.adminId ? {
+            id: user.adminId,
+            nom: user.adminNom,
+            prenom: user.adminPrenom,
+            poste: user.poste
+        } : null;
 
         // Ajout des informations utilisateur à la requête
         req.user = {
@@ -64,8 +74,8 @@ export const authenticateToken = async (req, res, next) => {
             email: user.email,
             role: user.role,
             requirePasswordChange: user.requirePasswordChange,
-            etudiant: user.etudiant,
-            admin: user.admin
+            etudiant: etudiant,
+            admin: admin
         };
 
         next();
@@ -74,9 +84,13 @@ export const authenticateToken = async (req, res, next) => {
         return res.status(401).json({
             message: 'Token invalide ou expiré'
         });
+    } finally {
+        if (connection) await connection.end();
     }
-};*/
+};
 
+// Les autres middlewares restent inchangés car ils utilisent req.user
+// ... (requireRole, requireStudent, requireAdmin, canVote, checkOwnership, checkPasswordChange)
 
 /**
  * Middleware de vérification de rôle
@@ -147,28 +161,49 @@ export const canVote = async (req, res, next) => {
  */
 export const checkOwnership = (resourceType) => {
     return async (req, res, next) => {
+        let connection;
         try {
             const resourceId = parseInt(req.params.id);
             const userId = req.user.id;
 
             let resource;
+            connection = await mysql.createConnection(dbConfig);
 
             switch (resourceType) {
                 case 'election':
-                    resource = await prisma.election.findUnique({
-                        where: { id: resourceId },
-                        include: { candidates: true }
-                    });
+                    const [electionRows] = await connection.execute(
+                        `SELECT e.*, c.id as candidateId, c.nom as candidateNom, 
+                                c.prenom as candidatePrenom, c.description as candidateDescription
+                         FROM elections e
+                         LEFT JOIN candidates c ON e.id = c.electionId
+                         WHERE e.id = ?`,
+                        [resourceId]
+                    );
+                    if (electionRows.length > 0) {
+                        resource = {
+                            ...electionRows[0],
+                            candidates: electionRows.filter(row => row.candidateId).map(row => ({
+                                id: row.candidateId,
+                                nom: row.candidateNom,
+                                prenom: row.candidatePrenom,
+                                description: row.candidateDescription
+                            }))
+                        };
+                    }
                     break;
                 case 'candidate':
-                    resource = await prisma.candidate.findUnique({
-                        where: { id: resourceId }
-                    });
+                    const [candidateRows] = await connection.execute(
+                        `SELECT * FROM candidates WHERE id = ?`,
+                        [resourceId]
+                    );
+                    resource = candidateRows[0];
                     break;
                 case 'vote':
-                    resource = await prisma.vote.findUnique({
-                        where: { id: resourceId }
-                    });
+                    const [voteRows] = await connection.execute(
+                        `SELECT * FROM votes WHERE id = ?`,
+                        [resourceId]
+                    );
+                    resource = voteRows[0];
                     break;
                 default:
                     return res.status(400).json({
@@ -221,6 +256,8 @@ export const checkOwnership = (resourceType) => {
                 message: 'Erreur lors de la vérification',
                 code: 'OWNERSHIP_CHECK_ERROR'
             });
+        } finally {
+            if (connection) await connection.end();
         }
     };
 };
