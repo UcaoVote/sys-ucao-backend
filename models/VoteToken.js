@@ -1,6 +1,17 @@
-import prisma from '../prisma.js';
+import mysql from 'mysql2/promise';
 import crypto from 'crypto';
 
+// Configuration de la connexion MySQL (à adapter selon votre configuration)
+const dbConfig = {
+    host: process.env.MYSQLHOST || 'localhost',
+    user: process.env.MYSQLUSER || 'root',
+    password: process.env.MYSQLPASSWORD || '',
+    database: process.env.MYSQLDATABASE || 'election_db',
+    port: process.env.MYSQLPORT || 3306,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+};
 
 /**
  * Modèle pour gérer les jetons de vote uniques
@@ -17,41 +28,61 @@ class VoteToken {
     }
 
     /**
+     * Crée une connexion à la base de données
+     * @returns {Promise} Connexion MySQL
+     */
+    static async getConnection() {
+        return await mysql.createConnection(dbConfig);
+    }
+
+    /**
      * Crée un jeton de vote pour un étudiant et une élection
      * @param {number} userId - ID de l'utilisateur
      * @param {number} electionId - ID de l'élection
      * @returns {Object} Jeton créé
      */
     static async createToken(userId, electionId) {
+        let connection;
         try {
-            // Vérifier que l'utilisateur n'a pas déjà un jeton pour cette élection
-            const existingToken = await prisma.voteToken.findFirst({
-                where: {
-                    userId,
-                    electionId,
-                    isUsed: false
-                }
-            });
+            connection = await this.getConnection();
 
-            if (existingToken) {
-                return existingToken;
+            // Vérifier que l'utilisateur n'a pas déjà un jeton pour cette élection
+            const [existingTokens] = await connection.execute(
+                `SELECT * FROM VoteToken WHERE userId = ? AND electionId = ? AND isUsed = FALSE`,
+                [userId, electionId]
+            );
+
+            if (existingTokens.length > 0) {
+                return existingTokens[0];
             }
 
             // Créer un nouveau jeton
-            const token = await prisma.voteToken.create({
-                data: {
-                    token: this.generateToken(),
-                    userId,
-                    electionId,
-                    isUsed: false,
-                    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // Expire dans 24h
-                }
-            });
+            const tokenValue = this.generateToken();
+            const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+            const [result] = await connection.execute(
+                `INSERT INTO VoteToken (token, userId, electionId, isUsed, expiresAt, createdAt, updatedAt) 
+                 VALUES (?, ?, ?, FALSE, ?, NOW(), NOW())`,
+                [tokenValue, userId, electionId, expiresAt]
+            );
+
+            const token = {
+                id: result.insertId,
+                token: tokenValue,
+                userId,
+                electionId,
+                isUsed: false,
+                expiresAt,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
 
             return token;
         } catch (error) {
             console.error('Erreur lors de la création du jeton:', error);
             throw error;
+        } finally {
+            if (connection) await connection.end();
         }
     }
 
@@ -62,29 +93,30 @@ class VoteToken {
      * @returns {Object|null} Informations du jeton ou null si invalide
      */
     static async validateToken(token, electionId) {
+        let connection;
         try {
-            const voteToken = await prisma.voteToken.findFirst({
-                where: {
-                    token,
-                    electionId,
-                    isUsed: false,
-                    expiresAt: {
-                        gt: new Date()
-                    }
-                },
-                include: {
-                    user: {
-                        include: {
-                            etudiant: true
-                        }
-                    }
-                }
-            });
+            connection = await this.getConnection();
 
-            return voteToken;
+            const [tokens] = await connection.execute(
+                `SELECT vt.*, u.*, e.* 
+                 FROM VoteToken vt
+                 JOIN User u ON vt.userId = u.id
+                 LEFT JOIN Etudiant e ON u.id = e.userId
+                 WHERE vt.token = ? AND vt.electionId = ? AND vt.isUsed = FALSE 
+                 AND vt.expiresAt > NOW()`,
+                [token, electionId]
+            );
+
+            if (tokens.length === 0) {
+                return null;
+            }
+
+            return tokens[0];
         } catch (error) {
             console.error('Erreur lors de la validation du jeton:', error);
             return null;
+        } finally {
+            if (connection) await connection.end();
         }
     }
 
@@ -94,18 +126,22 @@ class VoteToken {
      * @returns {boolean} Succès de l'opération
      */
     static async markTokenAsUsed(token) {
+        let connection;
         try {
-            await prisma.voteToken.updateMany({
-                where: { token },
-                data: {
-                    isUsed: true,
-                    usedAt: new Date()
-                }
-            });
+            connection = await this.getConnection();
+
+            await connection.execute(
+                `UPDATE VoteToken SET isUsed = TRUE, usedAt = NOW(), updatedAt = NOW() 
+                 WHERE token = ?`,
+                [token]
+            );
+
             return true;
         } catch (error) {
             console.error('Erreur lors du marquage du jeton:', error);
             return false;
+        } finally {
+            if (connection) await connection.end();
         }
     }
 
@@ -115,20 +151,25 @@ class VoteToken {
      * @returns {Array} Liste des jetons
      */
     static async getTokensForElection(electionId) {
+        let connection;
         try {
-            return await prisma.voteToken.findMany({
-                where: { electionId },
-                include: {
-                    user: {
-                        include: {
-                            etudiant: true
-                        }
-                    }
-                }
-            });
+            connection = await this.getConnection();
+
+            const [tokens] = await connection.execute(
+                `SELECT vt.*, u.*, e.* 
+                 FROM VoteToken vt
+                 JOIN User u ON vt.userId = u.id
+                 LEFT JOIN Etudiant e ON u.id = e.userId
+                 WHERE vt.electionId = ?`,
+                [electionId]
+            );
+
+            return tokens;
         } catch (error) {
             console.error('Erreur lors de la récupération des jetons:', error);
             return [];
+        } finally {
+            if (connection) await connection.end();
         }
     }
 
@@ -137,20 +178,21 @@ class VoteToken {
      * @returns {number} Nombre de jetons supprimés
      */
     static async cleanupExpiredTokens() {
+        let connection;
         try {
-            const result = await prisma.voteToken.deleteMany({
-                where: {
-                    expiresAt: {
-                        lt: new Date()
-                    }
-                }
-            });
+            connection = await this.getConnection();
 
-            console.log(`${result.count} jetons expirés supprimés`);
-            return result.count;
+            const [result] = await connection.execute(
+                `DELETE FROM VoteToken WHERE expiresAt < NOW()`
+            );
+
+            console.log(`${result.affectedRows} jetons expirés supprimés`);
+            return result.affectedRows;
         } catch (error) {
             console.error('Erreur lors du nettoyage des jetons:', error);
             return 0;
+        } finally {
+            if (connection) await connection.end();
         }
     }
 }

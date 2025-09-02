@@ -1,5 +1,5 @@
 import bcrypt from 'bcrypt';
-import prisma from '../prisma.js';
+import pool from '../database.js';
 
 export class PasswordResetService {
     // Génère un mot de passe temporaire lisible pour l'admin (retourné en clair)
@@ -19,18 +19,28 @@ export class PasswordResetService {
      * - Crée identifiantTemporaire si absent.
      */
     static async resetStudentAccess(adminId, studentId) {
+        let connection;
         try {
-            const student = await prisma.etudiant.findUnique({
-                where: { id: studentId },
-                include: { user: true }
-            });
+            connection = await pool.getConnection();
 
-            if (!student || !student.user) {
+            // Récupérer l'étudiant avec son utilisateur
+            const [studentRows] = await connection.execute(
+                `SELECT e.*, u.id as user_id, u.temp_password, u.require_password_change, 
+                        u.password_reset_expires, u.password
+                 FROM etudiants e 
+                 INNER JOIN users u ON e.user_id = u.id 
+                 WHERE e.id = ?`,
+                [studentId]
+            );
+
+            if (studentRows.length === 0 || !studentRows[0].user_id) {
                 throw new Error('Étudiant non trouvé ou sans compte lié');
             }
 
+            const student = studentRows[0];
+
             // Générer identifiant temporaire si absent
-            let temporaryIdentifiant = student.identifiantTemporaire;
+            let temporaryIdentifiant = student.identifiant_temporaire;
             if (!temporaryIdentifiant) {
                 const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
                 let idt = '';
@@ -45,57 +55,64 @@ export class PasswordResetService {
             const expirationDate = new Date();
             expirationDate.setHours(expirationDate.getHours() + 24);
 
-            // Transaction : update user (tempPassword + require flag + expiry) et etudiant (identifiant si absent)
-            const updated = await prisma.$transaction(async (tx) => {
-                await tx.user.update({
-                    where: { id: student.user.id },
-                    data: {
-                        tempPassword: temporaryPasswordHash,         // champ existant dans ton schéma
-                        requirePasswordChange: true,
-                        passwordResetExpires: expirationDate
-                        // NE PAS TOUCHER à `password` principal
-                    }
-                });
+            // Début de la transaction
+            await connection.beginTransaction();
 
-                const updatedStudent = await tx.etudiant.update({
-                    where: { id: studentId },
-                    data: {
-                        identifiantTemporaire: temporaryIdentifiant
-                    },
-                    include: { user: true }
-                });
+            try {
+                // Mise à jour de l'utilisateur
+                await connection.execute(
+                    `UPDATE users 
+                     SET temp_password = ?, require_password_change = TRUE, password_reset_expires = ?
+                     WHERE id = ?`,
+                    [temporaryPasswordHash, expirationDate, student.user_id]
+                );
 
-                // Log d'activité si tu as la table activityLog
-                if (tx.activityLog) {
-                    try {
-                        await tx.activityLog.create({
-                            data: {
-                                action: 'RESET_STUDENT_ACCESS',
-                                details: `Admin ${adminId} reset student ${studentId}`,
-                                userId: adminId
-                            }
-                        });
-                    } catch (err) {
-                        // Ne pas bloquer la requête si le log échoue
-                        console.warn('Activity log failed (non blocking):', err.message);
-                    }
+                // Mise à jour de l'étudiant
+                await connection.execute(
+                    `UPDATE etudiants 
+                     SET identifiant_temporaire = ?
+                     WHERE id = ?`,
+                    [temporaryIdentifiant, studentId]
+                );
+
+                // Log d'activité si la table existe
+                try {
+                    await connection.execute(
+                        `INSERT INTO activity_logs (action, details, user_id) 
+                         VALUES (?, ?, ?)`,
+                        ['RESET_STUDENT_ACCESS', `Admin ${adminId} reset student ${studentId}`, adminId]
+                    );
+                } catch (err) {
+                    // Ne pas bloquer la requête si le log échoue
+                    console.warn('Activity log failed (non blocking):', err.message);
                 }
 
-                return updatedStudent;
-            });
+                // Commit de la transaction
+                await connection.commit();
 
-            return {
-                temporaryIdentifiant,
-                temporaryPassword: temporaryPasswordPlain,
-                expirationDate,
-                student: {
-                    nom: updated.nom,
-                    prenom: updated.prenom,
-                    matricule: updated.matricule
-                }
-            };
+                // Récupérer les informations mises à jour de l'étudiant
+                const [updatedStudentRows] = await connection.execute(
+                    `SELECT nom, prenom, matricule FROM etudiants WHERE id = ?`,
+                    [studentId]
+                );
+
+                return {
+                    temporaryIdentifiant,
+                    temporaryPassword: temporaryPasswordPlain,
+                    expirationDate,
+                    student: updatedStudentRows[0]
+                };
+
+            } catch (error) {
+                // Rollback en cas d'erreur
+                await connection.rollback();
+                throw error;
+            }
+
         } catch (error) {
             throw new Error(`Erreur lors de la réinitialisation: ${error.message}`);
+        } finally {
+            if (connection) connection.release();
         }
     }
 
@@ -103,30 +120,41 @@ export class PasswordResetService {
      * Valide les credentials temporaires fournis par l'étudiant (identifiantTemporaire + mot de passe temporaire)
      */
     static async validateTemporaryCredentials(identifiant, password) {
+        let connection;
         try {
-            const student = await prisma.etudiant.findFirst({
-                where: { identifiantTemporaire: identifiant },
-                include: { user: true }
-            });
+            connection = await pool.getConnection();
 
-            if (!student || !student.user) {
+            // Rechercher l'étudiant par identifiant temporaire
+            const [studentRows] = await connection.execute(
+                `SELECT e.*, u.id as user_id, u.temp_password, u.password_reset_expires 
+                 FROM etudiants e 
+                 INNER JOIN users u ON e.user_id = u.id 
+                 WHERE e.identifiant_temporaire = ?`,
+                [identifiant]
+            );
+
+            if (studentRows.length === 0 || !studentRows[0].user_id) {
                 throw new Error('Identifiant temporaire invalide');
             }
 
+            const student = studentRows[0];
+
             // Vérifier expiration si présente
-            if (student.user.passwordResetExpires && student.user.passwordResetExpires < new Date()) {
+            if (student.password_reset_expires && new Date(student.password_reset_expires) < new Date()) {
                 throw new Error('Identifiants temporaires expirés');
             }
 
-            const isValid = await bcrypt.compare(password, student.user.tempPassword || '');
+            const isValid = await bcrypt.compare(password, student.temp_password || '');
             if (!isValid) {
                 throw new Error('Mot de passe temporaire incorrect');
             }
 
-            // retourne le student + user (comportement actuel attendu)
             return student;
+
         } catch (error) {
             throw new Error(`Validation échouée: ${error.message}`);
+        } finally {
+            if (connection) connection.release();
         }
     }
 
@@ -138,25 +166,23 @@ export class PasswordResetService {
      * - **Ne supprime pas** identifiantTemporaire (on garde l'identifiant créé à l'inscription)
      */
     static async completePasswordReset(userId, newPassword) {
+        let connection;
         try {
+            connection = await pool.getConnection();
             const hashed = await bcrypt.hash(newPassword, 10);
 
-            await prisma.$transaction([
-                prisma.user.update({
-                    where: { id: userId },
-                    data: {
-                        password: hashed,
-                        tempPassword: null,
-                        requirePasswordChange: false,
-                        passwordResetExpires: null
-                    }
-                })
-                // On NE supprime PAS l'identifiantTemporaire : on le laisse intact.
-            ]);
+            await connection.execute(
+                `UPDATE users 
+                 SET password = ?, temp_password = NULL, require_password_change = FALSE, password_reset_expires = NULL 
+                 WHERE id = ?`,
+                [hashed, userId]
+            );
 
             return true;
         } catch (error) {
             throw new Error(`Erreur lors du changement de mot de passe: ${error.message}`);
+        } finally {
+            if (connection) connection.release();
         }
     }
 }
