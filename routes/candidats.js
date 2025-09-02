@@ -487,122 +487,32 @@ router.put('/:candidateId/programme', authenticateToken, async (req, res) => {
     }
 });
 
-// Liste des candidats avec pagination - VERSION FINALE FONCTIONNELLE
-router.get('/', async (req, res) => {
+// Test sans pagination
+router.get('/test', async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
-        const { electionId, page = 1, limit = 10 } = req.query;
 
-        // Construction de la requête de base
-        let baseQuery = `
+        const query = `
             SELECT 
                 c.*,
                 u.email,
                 e.nom as etudiant_nom,
-                e.prenom as etudiant_prenom,
-                e.filiere,
-                e.annee,
-                e.ecole,
-                e.photoUrl as etudiant_photoUrl,
-                el.titre as election_titre,
-                el.type as election_type,
-                (SELECT COUNT(*) FROM votes v WHERE v.candidateId = c.id) as votes_count
+                e.prenom as etudiant_prenom
             FROM candidates c
             LEFT JOIN users u ON c.userId = u.id
             LEFT JOIN etudiants e ON u.id = e.userId
-            LEFT JOIN elections el ON c.electionId = el.id
+            LIMIT 10 OFFSET 0
         `;
 
-        let countQuery = `SELECT COUNT(*) as total FROM candidates c`;
-        let queryParams = [];
-        let countParams = [];
+        console.log('Requête test:', query);
+        const [rows] = await connection.execute(query, []);
 
-        // Ajouter la condition WHERE si electionId est fourni
-        if (electionId && electionId !== 'undefined' && electionId !== 'null') {
-            const electionIdInt = parseInt(electionId);
-            if (!isNaN(electionIdInt)) {
-                baseQuery += ` WHERE c.electionId = ?`;
-                countQuery += ` WHERE c.electionId = ?`;
-                queryParams.push(electionIdInt);
-                countParams.push(electionIdInt);
-            }
-        }
-
-        // Ajouter le ORDER BY et la pagination
-        baseQuery += ` ORDER BY c.nom ASC LIMIT ? OFFSET ?`;
-
-        // Paramètres de pagination (toujours ajoutés)
-        const limitInt = parseInt(limit);
-        const pageInt = parseInt(page);
-        const offsetInt = (pageInt - 1) * limitInt;
-
-        queryParams.push(limitInt, offsetInt);
-
-        console.log('Requête principale:', baseQuery);
-        console.log('Paramètres query:', queryParams);
-        console.log('Requête count:', countQuery);
-        console.log('Paramètres count:', countParams);
-
-        // DEBUG: Afficher la requête complète
-        console.log('Requête COMPLÈTE:');
-        console.log(baseQuery.replace(/\?/g, () => {
-            if (queryParams.length > 0) {
-                return `"${queryParams.shift()}"`;
-            }
-            return '?';
-        }));
-
-        // DEBUG: Afficher le nombre de paramètres vs le nombre de ?
-        const paramCount = queryParams.length;
-        const questionMarkCount = (baseQuery.match(/\?/g) || []).length;
-        console.log(`Nombre de ?: ${questionMarkCount}, Nombre de paramètres: ${paramCount}`);
-
-        if (questionMarkCount !== paramCount) {
-            console.error('INCOHÉRENCE: Le nombre de paramètres ne correspond pas au nombre de ?');
-            return res.status(500).json({
-                success: false,
-                message: 'Erreur interne de paramétrage'
-            });
-        }
-
-
-        if (questionMarkCount !== paramCount) {
-            console.error('INCOHÉRENCE: Le nombre de paramètres ne correspond pas au nombre de ?');
-            return res.status(500).json({
-                success: false,
-                message: 'Erreur interne de paramétrage'
-            });
-        }
-
-        // Exécuter les requêtes
-        const [candidateRows] = await connection.execute(baseQuery, queryParams);
-        const [countRows] = await connection.execute(countQuery, countParams);
-
-        const total = countRows[0].total;
-        const totalPages = Math.ceil(total / limitInt);
-
-        res.json({
-            success: true,
-            data: {
-                candidates: candidateRows,
-                pagination: {
-                    currentPage: pageInt,
-                    totalPages,
-                    totalCandidates: total,
-                    hasNext: pageInt < totalPages,
-                    hasPrev: pageInt > 1
-                }
-            }
-        });
+        res.json({ success: true, data: rows });
 
     } catch (error) {
-        console.error('Error fetching candidates:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erreur serveur lors de la récupération des candidats',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+        console.error('Error test:', error);
+        res.status(500).json({ success: false, message: 'Erreur test' });
     } finally {
         if (connection) await connection.release();
     }
