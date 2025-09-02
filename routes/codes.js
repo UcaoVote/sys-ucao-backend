@@ -179,3 +179,5 @@ function generateRegistrationCode() {
     }
     return out; // ex: UCAO-4F7K-Q8ZP
 }
+
+export default router;
