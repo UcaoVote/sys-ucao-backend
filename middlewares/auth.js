@@ -1,17 +1,20 @@
+// middlewares/auth.js
 import jwt from 'jsonwebtoken';
 import mysql from 'mysql2/promise';
 
-// Configuration de la connexion MySQL
+// Configuration de la connexion MySQL (pool)
 const dbConfig = {
     host: process.env.MYSQLHOST,
     user: process.env.MYSQLUSER,
     password: process.env.MYSQLPASSWORD,
     database: process.env.MYSQLDATABASE,
-    port: process.env.MYSQLPORT,
+    port: process.env.MYSQLPORT ? Number(process.env.MYSQLPORT) : undefined,
     waitForConnections: true,
     connectionLimit: 10,
-    queueLimit: 0
+    queueLimit: 0,
 };
+
+const pool = mysql.createPool(dbConfig);
 
 /**
  * Middleware d'authentification JWT
@@ -23,107 +26,102 @@ export const authenticateToken = async (req, res, next) => {
         const token = authHeader && authHeader.split(' ')[1];
 
         if (!token) {
-            return res.status(401).json({
-                message: 'Token d\'authentification requis'
-            });
+            return res.status(401).json({ message: "Token d'authentification requis" });
         }
 
-        // Vérification du token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        let decoded;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            console.error('JWT verify error:', err);
+            return res.status(401).json({ message: 'Token invalide ou expiré' });
+        }
 
-        connection = await mysql.createConnection(dbConfig);
+        // decoded doit contenir l'id de l'utilisateur ; tolère id ou userId
+        const userIdFromToken = decoded?.id ?? decoded?.userId;
+        if (!userIdFromToken) {
+            return res.status(401).json({ message: "Token invalide (user id manquant)" });
+        }
 
-        // Récupération de l'utilisateur avec ses relations
+        connection = await pool.getConnection();
+
         const [userRows] = await connection.execute(
             `SELECT u.*, e.id as etudiantId, e.matricule, e.nom as etudiantNom, 
-                    e.prenom as etudiantPrenom, a.id as adminId, a.nom as adminNom, 
-                    a.prenom as adminPrenom, a.poste
-             FROM users u
-             LEFT JOIN etudiants e ON u.id = e.userId
-             LEFT JOIN admins a ON u.id = a.userId
-             WHERE u.id = ?`,
-            [decoded.id]
+              e.prenom as etudiantPrenom, a.id as adminId, a.nom as adminNom, 
+              a.prenom as adminPrenom, a.poste
+       FROM users u
+       LEFT JOIN etudiants e ON u.id = e.userId
+       LEFT JOIN admins a ON u.id = a.userId
+       WHERE u.id = ?`,
+            [userIdFromToken]
         );
 
-        if (userRows.length === 0) {
-            return res.status(401).json({
-                message: 'Utilisateur non trouvé'
-            });
+        if (!userRows || userRows.length === 0) {
+            return res.status(401).json({ message: 'Utilisateur non trouvé' });
         }
 
-        const user = userRows[0];
+        const row = userRows[0];
 
-        // Construction des objets etudiant et admin
-        const etudiant = user.etudiantId ? {
-            id: user.etudiantId,
-            matricule: user.matricule,
-            nom: user.etudiantNom,
-            prenom: user.etudiantPrenom
-        } : null;
+        // Construire objets etudiant / admin si présents
+        const etudiant = row.etudiantId
+            ? {
+                id: row.etudiantId,
+                matricule: row.matricule,
+                nom: row.etudiantNom,
+                prenom: row.etudiantPrenom,
+            }
+            : null;
 
-        const admin = user.adminId ? {
-            id: user.adminId,
-            nom: user.adminNom,
-            prenom: user.adminPrenom,
-            poste: user.poste
-        } : null;
+        const admin = row.adminId
+            ? {
+                id: row.adminId,
+                nom: row.adminNom,
+                prenom: row.adminPrenom,
+                poste: row.poste,
+            }
+            : null;
 
-        // Ajout des informations utilisateur à la requête
+        // Attacher req.user - forcer types simples (string/boolean)
         req.user = {
-            id: user.id,
-            email: user.email,
-            role: user.role,
-            requirePasswordChange: user.requirePasswordChange,
-            etudiant: etudiant,
-            admin: admin
+            id: String(row.id),
+            email: row.email,
+            role: row.role,
+            requirePasswordChange: !!row.requirePasswordChange,
+            actif: !!row.actif,
+            etudiant,
+            admin,
         };
 
         next();
     } catch (error) {
-        console.error('Erreur d\'authentification:', error);
-        return res.status(401).json({
-            message: 'Token invalide ou expiré'
-        });
+        console.error("Erreur d'authentification:", error);
+        return res.status(500).json({ message: "Erreur serveur lors de l'authentification" });
     } finally {
-        if (connection) await connection.end();
+        if (connection) {
+            try { await connection.release(); } catch (e) { /* ignore */ }
+        }
     }
 };
 
-// Les autres middlewares restent inchangés car ils utilisent req.user
-// ... (requireRole, requireStudent, requireAdmin, canVote, checkOwnership, checkPasswordChange)
-
 /**
  * Middleware de vérification de rôle
+ * roles peut être une string ou un tableau de strings (ex: 'ADMIN' ou ['ADMIN','ETUDIANT'])
  */
-export const requireRole = (roles) => {
+// middlewares/role.js
+export function requireRole(role) {
     return (req, res, next) => {
-        if (!req.user) {
-            return res.status(401).json({
-                message: 'Authentification requise'
-            });
-        }
-
-        const userRole = req.user.role;
-        const allowedRoles = Array.isArray(roles) ? roles : [roles];
-
-        if (!allowedRoles.includes(userRole)) {
+        if (!req.user || req.user.role !== role) {
             return res.status(403).json({
-                message: 'Permissions insuffisantes'
+                success: false,
+                message: "Accès refusé. Droits insuffisants."
             });
         }
-
         next();
     };
-};
+}
 
-/**
- * Middleware pour vérifier si l'utilisateur est un étudiant
- */
+
 export const requireStudent = requireRole('ETUDIANT');
-
-/**
- * Middleware pour vérifier si l'utilisateur est un admin
- */
 export const requireAdmin = requireRole('ADMIN');
 
 /**
@@ -132,94 +130,86 @@ export const requireAdmin = requireRole('ADMIN');
 export const canVote = async (req, res, next) => {
     try {
         if (!req.user || req.user.role !== 'ETUDIANT') {
-            return res.status(403).json({
-                message: 'Seuls les étudiants peuvent voter',
-                code: 'STUDENT_ONLY'
-            });
+            return res.status(403).json({ message: 'Seuls les étudiants peuvent voter', code: 'STUDENT_ONLY' });
         }
 
-        // Vérifier si l'étudiant a un profil complet
         if (!req.user.etudiant || !req.user.etudiant.matricule) {
-            return res.status(400).json({
-                message: 'Profil étudiant incomplet',
-                code: 'INCOMPLETE_PROFILE'
-            });
+            return res.status(400).json({ message: 'Profil étudiant incomplet', code: 'INCOMPLETE_PROFILE' });
         }
 
         next();
     } catch (error) {
         console.error('Erreur vérification vote:', error);
-        return res.status(500).json({
-            message: 'Erreur lors de la vérification',
-            code: 'VOTE_CHECK_ERROR'
-        });
+        return res.status(500).json({ message: 'Erreur lors de la vérification', code: 'VOTE_CHECK_ERROR' });
     }
 };
 
 /**
  * Middleware pour vérifier la propriété de la ressource
+ * resourceType: 'election' | 'candidate' | 'vote'
  */
 export const checkOwnership = (resourceType) => {
     return async (req, res, next) => {
         let connection;
         try {
-            const resourceId = parseInt(req.params.id);
-            const userId = req.user.id;
+            // Valider id de ressource
+            const resourceIdRaw = req.params.id;
+            const resourceId = Number.parseInt(resourceIdRaw, 10);
+            if (Number.isNaN(resourceId)) {
+                return res.status(400).json({ message: 'Identifiant de ressource invalide', code: 'INVALID_RESOURCE_ID' });
+            }
 
-            let resource;
-            connection = await mysql.createConnection(dbConfig);
+            if (!req.user) {
+                return res.status(401).json({ message: 'Authentification requise' });
+            }
+
+            const userId = String(req.user.id);
+            connection = await pool.getConnection();
+
+            let resource = null;
 
             switch (resourceType) {
-                case 'election':
-                    const [electionRows] = await connection.execute(
+                case 'election': {
+                    const [rows] = await connection.execute(
                         `SELECT e.*, c.id as candidateId, c.nom as candidateNom, 
-                                c.prenom as candidatePrenom, c.description as candidateDescription
-                         FROM elections e
-                         LEFT JOIN candidates c ON e.id = c.electionId
-                         WHERE e.id = ?`,
+                    c.prenom as candidatePrenom, c.description as candidateDescription
+             FROM elections e
+             LEFT JOIN candidates c ON e.id = c.electionId
+             WHERE e.id = ?`,
                         [resourceId]
                     );
-                    if (electionRows.length > 0) {
+                    if (rows && rows.length > 0) {
                         resource = {
-                            ...electionRows[0],
-                            candidates: electionRows.filter(row => row.candidateId).map(row => ({
-                                id: row.candidateId,
-                                nom: row.candidateNom,
-                                prenom: row.candidatePrenom,
-                                description: row.candidateDescription
-                            }))
+                            ...rows[0],
+                            candidates: rows.filter(r => r.candidateId).map(r => ({
+                                id: r.candidateId,
+                                nom: r.candidateNom,
+                                prenom: r.candidatePrenom,
+                                description: r.candidateDescription,
+                            })),
                         };
                     }
                     break;
-                case 'candidate':
-                    const [candidateRows] = await connection.execute(
-                        `SELECT * FROM candidates WHERE id = ?`,
-                        [resourceId]
-                    );
-                    resource = candidateRows[0];
+                }
+                case 'candidate': {
+                    const [rows] = await connection.execute(`SELECT * FROM candidates WHERE id = ?`, [resourceId]);
+                    resource = rows && rows.length > 0 ? rows[0] : null;
                     break;
-                case 'vote':
-                    const [voteRows] = await connection.execute(
-                        `SELECT * FROM votes WHERE id = ?`,
-                        [resourceId]
-                    );
-                    resource = voteRows[0];
+                }
+                case 'vote': {
+                    const [rows] = await connection.execute(`SELECT * FROM votes WHERE id = ?`, [resourceId]);
+                    resource = rows && rows.length > 0 ? rows[0] : null;
                     break;
+                }
                 default:
-                    return res.status(400).json({
-                        message: 'Type de ressource non supporté',
-                        code: 'UNSUPPORTED_RESOURCE'
-                    });
+                    return res.status(400).json({ message: 'Type de ressource non supporté', code: 'UNSUPPORTED_RESOURCE' });
             }
 
             if (!resource) {
-                return res.status(404).json({
-                    message: 'Ressource non trouvée',
-                    code: 'RESOURCE_NOT_FOUND'
-                });
+                return res.status(404).json({ message: 'Ressource non trouvée', code: 'RESOURCE_NOT_FOUND' });
             }
 
-            // Les admins peuvent accéder à toutes les ressources
+            // Les admins ont accès à tout
             if (req.user.role === 'ADMIN') {
                 req.resource = resource;
                 return next();
@@ -227,48 +217,44 @@ export const checkOwnership = (resourceType) => {
 
             // Vérifier la propriété selon le type
             let isOwner = false;
-
             switch (resourceType) {
                 case 'election':
-                    // Les étudiants ne peuvent pas modifier les élections
+                    // Par défaut, seuls les admins modifient les élections ; étudiants non propriétaires
                     isOwner = false;
                     break;
                 case 'candidate':
-                    isOwner = resource.userId === userId;
-                    break;
                 case 'vote':
-                    isOwner = resource.userId === userId;
+                    // Les tables candidates/votes ont userId en varchar; comparer en string
+                    isOwner = String(resource.userId) === userId;
                     break;
             }
 
             if (!isOwner) {
-                return res.status(403).json({
-                    message: 'Accès non autorisé à cette ressource',
-                    code: 'RESOURCE_ACCESS_DENIED'
-                });
+                return res.status(403).json({ message: "Accès non autorisé à cette ressource", code: 'RESOURCE_ACCESS_DENIED' });
             }
 
             req.resource = resource;
             next();
         } catch (error) {
             console.error('Erreur vérification propriété:', error);
-            return res.status(500).json({
-                message: 'Erreur lors de la vérification',
-                code: 'OWNERSHIP_CHECK_ERROR'
-            });
+            return res.status(500).json({ message: 'Erreur lors de la vérification', code: 'OWNERSHIP_CHECK_ERROR' });
         } finally {
-            if (connection) await connection.end();
+            if (connection) {
+                try { await connection.release(); } catch (e) { /* ignore */ }
+            }
         }
     };
 };
 
-// Middleware pour vérifier si le changement de mot de passe est requis
+/**
+ * Middleware pour vérifier si l'utilisateur doit changer son mot de passe
+ */
 export const checkPasswordChange = (req, res, next) => {
-    if (req.user.requirePasswordChange && req.path !== '/change-password') {
+    if (req.user && req.user.requirePasswordChange && req.path !== '/change-password') {
         return res.status(403).json({
             message: 'Vous devez changer votre mot de passe avant de continuer',
             code: 'PASSWORD_CHANGE_REQUIRED',
-            requirePasswordChange: true
+            requirePasswordChange: true,
         });
     }
     next();
