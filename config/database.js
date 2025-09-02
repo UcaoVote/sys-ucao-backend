@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Configuration SIMPLIFIÉE pour Railways
+// Configuration  pour Railways
 const dbConfig = {
     host: process.env.MYSQLHOST,
     user: process.env.MYSQLUSER,
@@ -15,7 +15,7 @@ const dbConfig = {
     connectionLimit: 10,
 };
 
-console.log('🔧 Configuration DB:', {
+console.log('Configuration DB:', {
     host: dbConfig.host,
     user: dbConfig.user,
     database: dbConfig.database,
@@ -27,17 +27,17 @@ const pool = mysql.createPool(dbConfig);
 export async function testConnection() {
     try {
         const connection = await pool.getConnection();
-        console.log('✅ Connecté à MySQL Railways avec succès!');
+        console.log('Connecté à MySQL Railways avec succès!');
 
         // Test supplémentaire
         const [result] = await connection.execute('SELECT 1 + 1 AS solution');
-        console.log('🧪 Test calcul:', result[0].solution);
+        console.log('Test calcul:', result[0].solution);
 
         connection.release();
         return true;
     } catch (error) {
-        console.error('❌ Erreur de connexion détaillée:', error.message);
-        console.log('🔍 Code erreur:', error.code);
+        console.error('Erreur de connexion détaillée:', error.message);
+        console.log('Code erreur:', error.code);
         return false;
     }
 }
@@ -47,8 +47,8 @@ export async function query(sql, params = []) {
         const [rows] = await pool.execute(sql, params);
         return rows;
     } catch (error) {
-        console.error('❌ Erreur SQL:', error.message);
-        console.log('📝 Requête:', sql);
+        console.error('Erreur SQL:', error.message);
+        console.log('Requête:', sql);
         throw error;
     }
 }

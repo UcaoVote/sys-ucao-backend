@@ -1,10 +1,41 @@
 import jwt from 'jsonwebtoken';
 import prisma from '../prisma.js';
 
+
+
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
+const authenticateToken = async (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ message: 'Token manquant' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        // Vérifier que l'user existe toujours
+        const user = await User.findById(decoded.id);
+        if (!user || !user.actif) {
+            return res.status(401).json({ message: 'Utilisateur invalide' });
+        }
+
+        req.user = decoded;
+        next();
+    } catch (error) {
+        console.error('Erreur auth middleware:', error);
+        return res.status(403).json({ message: 'Token invalide' });
+    }
+};
+
+module.exports = { authenticateToken };
 /**
  * Middleware d'authentification JWT
  */
-export const authenticateToken = async (req, res, next) => {
+/*export const authenticateToken = async (req, res, next) => {
     try {
         const authHeader = req.headers['authorization'];
         const token = authHeader && authHeader.split(' ')[1];
@@ -50,7 +81,7 @@ export const authenticateToken = async (req, res, next) => {
             message: 'Token invalide ou expiré'
         });
     }
-};
+};*/
 
 
 /**

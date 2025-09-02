@@ -1,6 +1,7 @@
-import express from 'express';
-import prisma from '../prisma.js';
-import { authenticateToken } from '../middlewares/auth.js';
+const express = require('express');
+const Admin = require('../models/Admin');
+const User = require('../models/User');
+const { authenticateToken } = require('../middlewares/auth');
 
 const router = express.Router();
 
@@ -10,10 +11,7 @@ const router = express.Router();
  */
 router.get('/me', authenticateToken, async (req, res) => {
     try {
-        const admin = await prisma.admin.findUnique({
-            where: { userId: req.user.id },
-            include: { user: true }
-        });
+        const admin = await Admin.findWithUser(req.user.id);
 
         if (!admin) {
             return res.status(404).json({ message: "Admin introuvable" });
@@ -23,9 +21,9 @@ router.get('/me', authenticateToken, async (req, res) => {
             nom: admin.nom,
             prenom: admin.prenom,
             poste: admin.poste,
-            email: admin.user.email,
-            role: admin.user.role,
-            photoUrl: admin.user.photoUrl || null
+            email: admin.email,
+            role: admin.role,
+            photoUrl: admin.photoUrl || null
         });
     } catch (err) {
         console.error("Erreur admin/me:", err);
@@ -41,19 +39,24 @@ router.put('/update', authenticateToken, async (req, res) => {
     try {
         const { nom, prenom, email } = req.body;
 
-        const updatedAdmin = await prisma.admin.update({
-            where: { userId: req.user.id },
-            data: { nom, prenom, email },
-            include: { user: true }
-        });
+        // Mettre à jour l'admin
+        await Admin.update(req.user.id, { nom, prenom });
+
+        // Mettre à jour l'email de l'user si fourni
+        if (email) {
+            await User.update(req.user.id, { email });
+        }
+
+        // Récupérer les données mises à jour
+        const updatedAdmin = await Admin.findWithUser(req.user.id);
 
         res.json({
             message: "Profil mis à jour avec succès",
             admin: {
                 nom: updatedAdmin.nom,
                 prenom: updatedAdmin.prenom,
-                email: updatedAdmin.user.email,
-                photoUrl: updatedAdmin.user.photoUrl
+                email: updatedAdmin.email,
+                photoUrl: updatedAdmin.photoUrl
             }
         });
     } catch (err) {
@@ -62,5 +65,4 @@ router.put('/update', authenticateToken, async (req, res) => {
     }
 });
 
-
-export default router;
+module.exports = router;

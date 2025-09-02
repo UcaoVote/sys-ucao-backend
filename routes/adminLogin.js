@@ -1,10 +1,10 @@
-import express from 'express';
-import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
-import prisma from '../prisma.js';
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+const Admin = require('../models/Admin');
 
 const router = express.Router();
-
 
 router.post('/', async (req, res) => {
     try {
@@ -13,15 +13,27 @@ router.post('/', async (req, res) => {
         if (!email || !password)
             return res.status(400).json({ message: 'Email et mot de passe requis' });
 
-        // Trouver user ADMIN par email
-        const user = await prisma.user.findUnique({ where: { email } });
+        // Trouver user par email
+        const user = await User.findByEmail(email);
+
         if (!user || user.role !== 'ADMIN') {
             return res.status(400).json({ message: 'Administrateur non trouvé ou rôle invalide' });
+        }
+
+        // Vérifier si le compte est actif
+        if (!user.actif) {
+            return res.status(400).json({ message: 'Compte désactivé' });
         }
 
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword)
             return res.status(400).json({ message: 'Mot de passe incorrect' });
+
+        // Vérifier que l'admin existe bien
+        const admin = await Admin.findByUserId(user.id);
+        if (!admin) {
+            return res.status(400).json({ message: 'Profil administrateur incomplet' });
+        }
 
         // Génération du token JWT
         const token = jwt.sign(
@@ -34,7 +46,6 @@ router.post('/', async (req, res) => {
             { expiresIn: '8h' }
         );
 
-
         res.json({ message: 'Connexion réussie', token });
     } catch (error) {
         console.error(error);
@@ -42,4 +53,4 @@ router.post('/', async (req, res) => {
     }
 });
 
-export default router;
+module.exports = router;
