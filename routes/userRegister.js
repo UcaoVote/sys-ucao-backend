@@ -12,7 +12,7 @@ const generateTemporaryIdentifiant = () => {
   return `TEMP${identifiant}`;
 };
 
-// Validations (inchangées)
+// Validations
 const validateEmail = (email) => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
   const forbiddenChars = /[<>"'`]/;
@@ -24,13 +24,13 @@ const validatePassword = (password) =>
 
 const validateText = (text) => !/[<>"'`]/.test(text);
 
-// Logger minimal (inchangé)
+// Logger minimal
 const logger = {
   info: (m, d) => console.log(`[INFO] ${m}`, JSON.stringify(d)),
   error: (m, e) => console.error(`[ERROR] ${m}`, { error: e.message, stack: e.stack, at: new Date().toISOString() })
 };
 
-// Rate limit (inchangé)
+// Rate limit
 const rateLimit = (options) => {
   const requests = new Map();
   return (req, res, next) => {
@@ -54,28 +54,40 @@ const rateLimit = (options) => {
 };
 
 router.post('/', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }), async (req, res) => {
-  console.log("Requête reçue:", req.body);
+  console.log("Requête d'inscription reçue:", req.body);
   let connection;
   try {
     const { email, password, confirmPassword, nom, prenom, filiere, annee, code, matricule, ecole } = req.body;
 
-    // Champs obligatoires (inchangé)
+    // Champs obligatoires
     if (!email || !password || !confirmPassword || !nom || !prenom || !filiere || !annee || !ecole) {
-      return res.status(400).json({ success: false, message: 'Tous les champs obligatoires sont requis.' });
+      return res.status(400).json({
+        success: false,
+        message: 'Tous les champs obligatoires sont requis.'
+      });
     }
 
-    // Validation des mots de passe identiques (inchangé)
+    // Validation des mots de passe identiques
     if (password !== confirmPassword) {
-      return res.status(400).json({ success: false, message: 'Les mots de passe ne correspondent pas.' });
+      return res.status(400).json({
+        success: false,
+        message: 'Les mots de passe ne correspondent pas.'
+      });
     }
 
     const anneeInt = Number.parseInt(annee, 10);
     if (!Number.isInteger(anneeInt) || anneeInt < 1 || anneeInt > 3) {
-      return res.status(400).json({ success: false, message: "L'année doit être entre 1 et 3." });
+      return res.status(400).json({
+        success: false,
+        message: "L'année doit être entre 1 et 3."
+      });
     }
 
     if (!validateEmail(email)) {
-      return res.status(400).json({ success: false, message: 'Format email invalide.' });
+      return res.status(400).json({
+        success: false,
+        message: 'Format email invalide.'
+      });
     }
 
     if (!validatePassword(password)) {
@@ -85,7 +97,7 @@ router.post('/', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }), async (req, re
       });
     }
 
-    // Validation des champs texte (inchangé)
+    // Validation des champs texte
     if (!validateText(nom) || !validateText(prenom) || !validateText(filiere) || !validateText(ecole)) {
       return res.status(400).json({
         success: false,
@@ -103,7 +115,10 @@ router.post('/', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }), async (req, re
     );
 
     if (emailExists.length > 0) {
-      return res.status(409).json({ success: false, message: "Cet email est déjà utilisé." });
+      return res.status(409).json({
+        success: false,
+        message: "Cet email est déjà utilisé."
+      });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -120,7 +135,7 @@ router.post('/', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }), async (req, re
       try {
         // Vérification du code d'inscription
         const [regCodeRows] = await connection.execute(
-          'SELECT id, is_used FROM registration_codes WHERE code = ?',
+          'SELECT id, used FROM registration_codes WHERE code = ?',
           [code]
         );
 
@@ -132,7 +147,7 @@ router.post('/', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }), async (req, re
         }
 
         const regCode = regCodeRows[0];
-        if (regCode.is_used) {
+        if (regCode.used) {
           return res.status(409).json({
             success: false,
             message: "Ce code d'inscription a déjà été utilisé."
@@ -147,23 +162,33 @@ router.post('/', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }), async (req, re
         try {
           // Insertion de l'utilisateur
           const [userResult] = await connection.execute(
-            'INSERT INTO users (email, password, role, temp_password, require_password_change) VALUES (?, ?, ?, ?, ?)',
-            [email, hashedPassword, 'ETUDIANT', null, false]
+            'INSERT INTO users (id, email, password, role, actif, tempPassword, requirePasswordChange) VALUES (UUID(), ?, ?, ?, ?, ?, ?)',
+            [email, hashedPassword, 'ETUDIANT', true, null, false]
           );
 
-          const userId = userResult.insertId;
+          // Récupérer l'ID de l'utilisateur inséré
+          const [newUserRows] = await connection.execute(
+            'SELECT id FROM users WHERE email = ?',
+            [email]
+          );
+
+          if (newUserRows.length === 0) {
+            throw new Error('Erreur lors de la création de l\'utilisateur');
+          }
+
+          const userId = newUserRows[0].id;
 
           // Insertion de l'étudiant
           await connection.execute(
             `INSERT INTO etudiants 
-            (user_id, nom, prenom, identifiant_temporaire, filiere, annee, code_inscription, ecole) 
+            (userId, nom, prenom, identifiantTemporaire, filiere, annee, codeInscription, ecole) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [userId, nom, prenom, temporaryIdentifiant, filiere, anneeInt, code, ecole]
           );
 
           // Mise à jour du code d'inscription
           await connection.execute(
-            'UPDATE registration_codes SET is_used = TRUE, used_by_user_id = ? WHERE code = ?',
+            'UPDATE registration_codes SET used = TRUE, usedBy = ? WHERE code = ?',
             [userId, code]
           );
 
@@ -208,7 +233,7 @@ router.post('/', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }), async (req, re
         return res.status(500).json({
           success: false,
           message: "Erreur interne lors de l'inscription.",
-          error: txError.message
+          error: process.env.NODE_ENV === 'development' ? txError.message : undefined
         });
       }
     }
@@ -216,26 +241,35 @@ router.post('/', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }), async (req, re
     // 2e/3e année : via matricule
     if (anneeInt >= 2 && anneeInt <= 3) {
       if (!matricule) {
-        return res.status(400).json({ success: false, message: 'Matricule requis pour les années supérieures.' });
+        return res.status(400).json({
+          success: false,
+          message: 'Matricule requis pour les années supérieures.'
+        });
       }
 
       try {
         // Recherche de l'étudiant par matricule
         const [etuRows] = await connection.execute(
-          'SELECT id, user_id, identifiant_temporaire FROM etudiants WHERE matricule = ?',
+          'SELECT id, userId, identifiantTemporaire FROM etudiants WHERE matricule = ?',
           [matricule]
         );
 
         if (etuRows.length === 0) {
-          return res.status(404).json({ success: false, message: "Matricule non trouvé. Contactez l'administration." });
+          return res.status(404).json({
+            success: false,
+            message: "Matricule non trouvé. Contactez l'administration."
+          });
         }
 
         const etuRow = etuRows[0];
-        if (etuRow.user_id) {
-          return res.status(409).json({ success: false, message: 'Ce matricule est déjà associé à un compte.' });
+        if (etuRow.userId) {
+          return res.status(409).json({
+            success: false,
+            message: 'Ce matricule est déjà associé à un compte.'
+          });
         }
 
-        const temporaryIdentifiant = etuRow.identifiant_temporaire || generateTemporaryIdentifiant();
+        const temporaryIdentifiant = etuRow.identifiantTemporaire || generateTemporaryIdentifiant();
 
         // Début de la transaction
         await connection.beginTransaction();
@@ -243,16 +277,26 @@ router.post('/', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }), async (req, re
         try {
           // Insertion de l'utilisateur
           const [userResult] = await connection.execute(
-            'INSERT INTO users (email, password, role, temp_password, require_password_change) VALUES (?, ?, ?, ?, ?)',
-            [email, hashedPassword, 'ETUDIANT', null, false]
+            'INSERT INTO users (id, email, password, role, actif, tempPassword, requirePasswordChange) VALUES (UUID(), ?, ?, ?, ?, ?, ?)',
+            [email, hashedPassword, 'ETUDIANT', true, null, false]
           );
 
-          const userId = userResult.insertId;
+          // Récupérer l'ID de l'utilisateur inséré
+          const [newUserRows] = await connection.execute(
+            'SELECT id FROM users WHERE email = ?',
+            [email]
+          );
+
+          if (newUserRows.length === 0) {
+            throw new Error('Erreur lors de la création de l\'utilisateur');
+          }
+
+          const userId = newUserRows[0].id;
 
           // Mise à jour de l'étudiant
           await connection.execute(
             `UPDATE etudiants 
-            SET user_id = ?, nom = ?, prenom = ?, identifiant_temporaire = ?, filiere = ?, annee = ?, ecole = ? 
+            SET userId = ?, nom = ?, prenom = ?, identifiantTemporaire = ?, filiere = ?, annee = ?, ecole = ? 
             WHERE id = ?`,
             [userId, nom, prenom, temporaryIdentifiant, filiere, anneeInt, ecole, etuRow.id]
           );
@@ -286,16 +330,24 @@ router.post('/', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }), async (req, re
         }
       } catch (txError) {
         logger.error('Erreur transaction 2/3A', txError);
-        return res.status(500).json({ success: false, message: "Erreur lors de l'association du matricule." });
+        return res.status(500).json({
+          success: false,
+          message: "Erreur lors de l'association du matricule.",
+          error: process.env.NODE_ENV === 'development' ? txError.message : undefined
+        });
       }
     }
 
   } catch (err) {
     logger.error('Erreur inscription', err);
-    return res.status(500).json({ success: false, message: 'Une erreur serveur est survenue.' });
+    return res.status(500).json({
+      success: false,
+      message: 'Une erreur serveur est survenue.',
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   } finally {
     // Libération de la connexion
-    if (connection) connection.release();
+    if (connection) await connection.release();
   }
 });
 

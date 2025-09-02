@@ -4,10 +4,10 @@ import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
 import pool from '../config/database.js';
 import { authenticateToken } from '../middlewares/auth.js';
-import { PasswordResetService } from '../services/passwordResetService.js';
 
 const router = express.Router();
 
+// Configuration de nodemailer
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -21,7 +21,7 @@ const JWT_EXPIRES_NORMAL = '8h';
 const JWT_EXPIRES_TEMP = '1h';
 
 // POST /auth/login
-router.post('/', async (req, res) => {
+router.post('/login', async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
@@ -33,7 +33,10 @@ router.post('/', async (req, res) => {
         }
 
         if (!identifier || !password) {
-            return res.status(400).json({ success: false, message: 'Identifiant et mot de passe requis' });
+            return res.status(400).json({
+                success: false,
+                message: 'Identifiant et mot de passe requis'
+            });
         }
 
         let user = null;
@@ -57,22 +60,58 @@ router.post('/', async (req, res) => {
         }
 
         if (!user) {
-            return res.status(401).json({ success: false, message: 'Identifiants invalides' });
+            return res.status(401).json({
+                success: false,
+                message: 'Identifiants invalides'
+            });
+        }
+
+        // Vérifier si le compte est actif
+        if (!user.actif) {
+            return res.status(401).json({
+                success: false,
+                message: 'Votre compte est désactivé. Contactez l\'administration.'
+            });
         }
 
         // Vérifier mot de passe temporaire
         if (user.tempPassword) {
-            return res.status(401).json({
-                success: false,
-                message: 'Votre compte a été réinitialisé. Utilisez vos identifiants temporaires.',
-                requirePasswordChange: true
-            });
+            const validTempPassword = await bcrypt.compare(password, user.tempPassword);
+            if (validTempPassword) {
+                // Générer un token temporaire pour forcer le changement de mot de passe
+                const tempToken = jwt.sign(
+                    {
+                        id: user.id,
+                        role: user.role,
+                        requirePasswordChange: true
+                    },
+                    JWT_SECRET,
+                    { expiresIn: JWT_EXPIRES_TEMP }
+                );
+
+                return res.json({
+                    success: true,
+                    message: 'Connexion temporaire réussie - Changement de mot de passe requis',
+                    data: {
+                        token: tempToken,
+                        requirePasswordChange: true,
+                        user: {
+                            id: user.id,
+                            email: user.email,
+                            role: user.role
+                        }
+                    }
+                });
+            }
         }
 
         // Vérifier mot de passe normal
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) {
-            return res.status(401).json({ success: false, message: 'Identifiants invalides' });
+            return res.status(401).json({
+                success: false,
+                message: 'Identifiants invalides'
+            });
         }
 
         const token = jwt.sign(
@@ -81,8 +120,8 @@ router.post('/', async (req, res) => {
                 role: user.role,
                 requirePasswordChange: user.requirePasswordChange || false
             },
-            process.env.JWT_SECRET,
-            { expiresIn: '8h' }
+            JWT_SECRET,
+            { expiresIn: JWT_EXPIRES_NORMAL }
         );
 
         // Récupérer les informations de l'étudiant si applicable
@@ -95,7 +134,10 @@ router.post('/', async (req, res) => {
             if (studentRows.length > 0) {
                 studentInfo = {
                     nom: studentRows[0].nom,
-                    prenom: studentRows[0].prenom
+                    prenom: studentRows[0].prenom,
+                    filiere: studentRows[0].filiere,
+                    annee: studentRows[0].annee,
+                    ecole: studentRows[0].ecole
                 };
             }
         }
@@ -116,25 +158,67 @@ router.post('/', async (req, res) => {
         });
     } catch (error) {
         console.error('ERREUR LOGIN:', error);
-        res.status(500).json({ success: false, message: 'Erreur serveur lors de la connexion' });
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur lors de la connexion',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    } finally {
+        if (connection) await connection.release();
     }
 });
 
-// Gestionnaire de connexion temporaire
+// Gestionnaire de connexion temporaire simplifié
 const handleTemporaryLogin = async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { identifiantTemporaire, password } = req.body;
+
         if (!identifiantTemporaire || !password) {
-            return res.status(400).json({ success: false, message: 'Identifiant temporaire et mot de passe requis' });
+            return res.status(400).json({
+                success: false,
+                message: 'Identifiant temporaire et mot de passe requis'
+            });
         }
 
-        const student = await PasswordResetService.validateTemporaryCredentials(identifiantTemporaire, password);
+        // Rechercher l'étudiant par identifiant temporaire
+        const [studentRows] = await connection.execute(
+            `SELECT e.*, u.* FROM etudiants e 
+             JOIN users u ON e.userId = u.id 
+             WHERE e.identifiantTemporaire = ?`,
+            [identifiantTemporaire]
+        );
+
+        if (studentRows.length === 0) {
+            return res.status(401).json({
+                success: false,
+                message: 'Identifiants temporaires invalides'
+            });
+        }
+
+        const student = studentRows[0];
+
+        // Vérifier le mot de passe temporaire
+        if (!student.tempPassword) {
+            return res.status(401).json({
+                success: false,
+                message: 'Aucun mot de passe temporaire défini'
+            });
+        }
+
+        const validPassword = await bcrypt.compare(password, student.tempPassword);
+        if (!validPassword) {
+            return res.status(401).json({
+                success: false,
+                message: 'Identifiants temporaires invalides'
+            });
+        }
 
         const token = jwt.sign(
             {
-                id: student.user.id,
-                email: student.user.email,
-                role: student.user.role,
+                id: student.userId,
+                role: student.role,
                 requirePasswordChange: true
             },
             JWT_SECRET,
@@ -148,9 +232,9 @@ const handleTemporaryLogin = async (req, res) => {
                 token,
                 requirePasswordChange: true,
                 user: {
-                    id: student.user.id,
-                    email: student.user.email,
-                    role: student.user.role,
+                    id: student.userId,
+                    email: student.email,
+                    role: student.role,
                     etudiant: {
                         id: student.id,
                         nom: student.nom,
@@ -165,76 +249,15 @@ const handleTemporaryLogin = async (req, res) => {
         });
     } catch (error) {
         console.error('Temporary login error:', error);
-        return res.status(401).json({ success: false, message: error.message });
+        return res.status(500).json({
+            success: false,
+            message: 'Erreur serveur lors de la connexion temporaire',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    } finally {
+        if (connection) await connection.release();
     }
 };
-
-// POST /auth/change-password-temporary
-router.post('/change-password-temporary', authenticateToken, async (req, res) => {
-    let connection;
-    try {
-        connection = await pool.getConnection();
-        const { newPassword, confirmPassword, currentPassword } = req.body;
-
-        if (!newPassword || !confirmPassword) {
-            return res.status(400).json({ success: false, message: 'Tous les champs requis' });
-        }
-        if (newPassword !== confirmPassword) {
-            return res.status(400).json({ success: false, message: 'Les mots de passe ne correspondent pas' });
-        }
-        if (newPassword.length < 8) {
-            return res.status(400).json({ success: false, message: 'Le mot de passe doit contenir au moins 8 caractères' });
-        }
-
-        const [userRows] = await connection.execute(
-            'SELECT id, tempPassword, password, requirePasswordChange FROM users WHERE id = ?',
-            [req.user.id]
-        );
-
-        if (userRows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Utilisateur introuvable' });
-        }
-
-        const user = userRows[0];
-
-        if (user.requirePasswordChange) {
-            await PasswordResetService.completePasswordReset(user.id, newPassword);
-
-            const newToken = jwt.sign(
-                { id: user.id, role: req.user.role, requirePasswordChange: false },
-                JWT_SECRET,
-                { expiresIn: JWT_EXPIRES_NORMAL }
-            );
-
-            return res.json({
-                success: true,
-                message: 'Mot de passe changé avec succès',
-                data: { token: newToken, requirePasswordChange: false }
-            });
-        }
-
-        if (!currentPassword) {
-            return res.status(400).json({ success: false, message: 'Mot de passe actuel requis' });
-        }
-
-        const isCurrentValid = await bcrypt.compare(currentPassword, user.password);
-        if (!isCurrentValid) {
-            return res.status(401).json({ success: false, message: 'Mot de passe actuel incorrect' });
-        }
-
-        const isSame = await bcrypt.compare(newPassword, user.password);
-        if (isSame) {
-            return res.status(400).json({ success: false, message: 'Le nouveau mot de passe doit être différent de l\'ancien' });
-        }
-
-        await PasswordResetService.completePasswordReset(user.id, newPassword);
-
-        return res.json({ success: true, message: 'Mot de passe changé avec succès' });
-    } catch (error) {
-        console.error('Erreur changement mot de passe temporaire:', error);
-        return res.status(500).json({ success: false, message: 'Erreur lors du changement de mot de passe' });
-    }
-});
 
 // POST /auth/change-password
 router.post('/change-password', authenticateToken, async (req, res) => {
@@ -244,46 +267,126 @@ router.post('/change-password', authenticateToken, async (req, res) => {
         const { currentPassword, newPassword, confirmPassword } = req.body;
 
         if (!currentPassword || !newPassword || !confirmPassword) {
-            return res.status(400).json({ success: false, message: 'Tous les champs sont requis' });
+            return res.status(400).json({
+                success: false,
+                message: 'Tous les champs sont requis'
+            });
         }
+
         if (newPassword !== confirmPassword) {
-            return res.status(400).json({ success: false, message: 'Les mots de passe ne correspondent pas' });
+            return res.status(400).json({
+                success: false,
+                message: 'Les mots de passe ne correspondent pas'
+            });
         }
+
         if (newPassword.length < 8) {
-            return res.status(400).json({ success: false, message: 'Le mot de passe doit contenir au moins 8 caractères' });
+            return res.status(400).json({
+                success: false,
+                message: 'Le mot de passe doit contenir au moins 8 caractères'
+            });
         }
 
         const [userRows] = await connection.execute(
-            'SELECT id, password FROM users WHERE id = ?',
+            'SELECT id, password, tempPassword, requirePasswordChange FROM users WHERE id = ?',
             [req.user.id]
         );
 
         if (userRows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Utilisateur introuvable' });
+            return res.status(404).json({
+                success: false,
+                message: 'Utilisateur introuvable'
+            });
         }
 
         const user = userRows[0];
 
-        const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
-        if (!isCurrentPasswordValid) {
-            return res.status(401).json({ success: false, message: 'Mot de passe actuel incorrect' });
-        }
+        // Si changement de mot de passe requis (après réinitialisation)
+        if (user.requirePasswordChange) {
+            // Vérifier que le mot de passe temporaire est fourni
+            if (!currentPassword) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Mot de passe temporaire requis'
+                });
+            }
 
-        const isSamePassword = await bcrypt.compare(newPassword, user.password);
-        if (isSamePassword) {
-            return res.status(400).json({ success: false, message: 'Le nouveau mot de passe doit être différent de l\'ancien' });
+            // Vérifier le mot de passe temporaire
+            if (!user.tempPassword) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Aucun mot de passe temporaire défini'
+                });
+            }
+
+            const validTempPassword = await bcrypt.compare(currentPassword, user.tempPassword);
+            if (!validTempPassword) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Mot de passe temporaire incorrect'
+                });
+            }
+        } else {
+            // Changement de mot de passe normal
+            if (!currentPassword) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Mot de passe actuel requis'
+                });
+            }
+
+            const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+            if (!isCurrentPasswordValid) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Mot de passe actuel incorrect'
+                });
+            }
+
+            const isSamePassword = await bcrypt.compare(newPassword, user.password);
+            if (isSamePassword) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Le nouveau mot de passe doit être différent de l\'ancien'
+                });
+            }
         }
 
         const hashedPassword = await bcrypt.hash(newPassword, 10);
+
         await connection.execute(
-            'UPDATE users SET password = ? WHERE id = ?',
+            'UPDATE users SET password = ?, tempPassword = NULL, requirePasswordChange = FALSE WHERE id = ?',
             [hashedPassword, req.user.id]
         );
 
-        return res.json({ success: true, message: 'Mot de passe changé avec succès' });
+        // Générer un nouveau token sans requirePasswordChange
+        const newToken = jwt.sign(
+            {
+                id: req.user.id,
+                role: req.user.role,
+                requirePasswordChange: false
+            },
+            JWT_SECRET,
+            { expiresIn: JWT_EXPIRES_NORMAL }
+        );
+
+        return res.json({
+            success: true,
+            message: 'Mot de passe changé avec succès',
+            data: {
+                token: newToken,
+                requirePasswordChange: false
+            }
+        });
     } catch (error) {
         console.error('Erreur changement mot de passe:', error);
-        return res.status(500).json({ success: false, message: 'Erreur lors du changement de mot de passe' });
+        return res.status(500).json({
+            success: false,
+            message: 'Erreur lors du changement de mot de passe',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    } finally {
+        if (connection) await connection.release();
     }
 });
 
@@ -293,26 +396,44 @@ router.post('/forgot-password', async (req, res) => {
     try {
         connection = await pool.getConnection();
         const { email } = req.body;
-        if (!email) return res.status(400).json({ success: false, message: 'Email requis' });
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email requis'
+            });
+        }
 
         const [userRows] = await connection.execute(
             'SELECT u.*, e.nom, e.prenom FROM users u LEFT JOIN etudiants e ON u.id = e.userId WHERE u.email = ?',
             [email]
         );
 
-        if (userRows.length === 0 || userRows[0].role !== 'ETUDIANT') {
-            return res.json({ success: true, message: 'Si cet email existe dans notre système, un lien de réinitialisation a été envoyé' });
+        // Toujours retourner success=true pour des raisons de sécurité
+        if (userRows.length === 0) {
+            return res.json({
+                success: true,
+                message: 'Si cet email existe dans notre système, un lien de réinitialisation a été envoyé'
+            });
         }
 
         const user = userRows[0];
 
+        // Vérifier que c'est un étudiant
+        if (user.role !== 'ETUDIANT') {
+            return res.json({
+                success: true,
+                message: 'Si cet email existe dans notre système, un lien de réinitialisation a été envoyé'
+            });
+        }
+
         const resetToken = jwt.sign(
-            { userId: user.id, type: 'password_reset', email: user.email },
+            { userId: user.id, type: 'password_reset' },
             JWT_SECRET,
             { expiresIn: '1h' }
         );
 
-        const resetLink = `${process.env.FRONTEND_URL}/reset-password.html?token=${resetToken}`;
+        const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
 
         const mailOptions = {
             from: process.env.EMAIL_FROM || 'no-reply@ucao-uuc.com',
@@ -333,10 +454,19 @@ router.post('/forgot-password', async (req, res) => {
 
         await transporter.sendMail(mailOptions);
 
-        return res.json({ success: true, message: 'Si cet email existe dans notre système, un lien de réinitialisation a été envoyé' });
+        return res.json({
+            success: true,
+            message: 'Si cet email existe dans notre système, un lien de réinitialisation a été envoyé'
+        });
     } catch (error) {
         console.error('Erreur envoi email réinitialisation:', error);
-        return res.status(500).json({ success: false, message: 'Erreur lors de l\'envoi des instructions de réinitialisation' });
+        return res.status(500).json({
+            success: false,
+            message: 'Erreur lors de l\'envoi des instructions de réinitialisation',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    } finally {
+        if (connection) await connection.release();
     }
 });
 
@@ -346,34 +476,78 @@ router.post('/reset-password', async (req, res) => {
     try {
         connection = await pool.getConnection();
         const { token, newPassword, confirmPassword } = req.body;
-        if (!token || !newPassword || !confirmPassword) return res.status(400).json({ success: false, message: 'Tous les champs sont requis' });
-        if (newPassword !== confirmPassword) return res.status(400).json({ success: false, message: 'Les mots de passe ne correspondent pas' });
-        if (newPassword.length < 8) return res.status(400).json({ success: false, message: 'Le mot de passe doit contenir au moins 8 caractères' });
+
+        if (!token || !newPassword || !confirmPassword) {
+            return res.status(400).json({
+                success: false,
+                message: 'Tous les champs sont requis'
+            });
+        }
+
+        if (newPassword !== confirmPassword) {
+            return res.status(400).json({
+                success: false,
+                message: 'Les mots de passe ne correspondent pas'
+            });
+        }
+
+        if (newPassword.length < 8) {
+            return res.status(400).json({
+                success: false,
+                message: 'Le mot de passe doit contenir au moins 8 caractères'
+            });
+        }
 
         let decoded;
         try {
             decoded = jwt.verify(token, JWT_SECRET);
         } catch (err) {
-            return res.status(401).json({ success: false, message: 'Lien de réinitialisation invalide ou expiré' });
+            return res.status(401).json({
+                success: false,
+                message: 'Lien de réinitialisation invalide ou expiré'
+            });
         }
 
-        if (decoded.type !== 'password_reset') return res.status(401).json({ success: false, message: 'Token invalide' });
+        if (decoded.type !== 'password_reset') {
+            return res.status(401).json({
+                success: false,
+                message: 'Token invalide'
+            });
+        }
 
-        const [userRows] = await connection.execute('SELECT * FROM users WHERE id = ?', [decoded.userId]);
-        if (userRows.length === 0) return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+        const [userRows] = await connection.execute(
+            'SELECT * FROM users WHERE id = ?',
+            [decoded.userId]
+        );
+
+        if (userRows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Utilisateur non trouvé'
+            });
+        }
 
         const user = userRows[0];
-
         const hashedPassword = await bcrypt.hash(newPassword, 10);
+
         await connection.execute(
             'UPDATE users SET password = ?, tempPassword = NULL, requirePasswordChange = FALSE, passwordResetExpires = NULL WHERE id = ?',
             [hashedPassword, user.id]
         );
 
-        return res.json({ success: true, message: 'Mot de passe réinitialisé avec succès' });
+        return res.json({
+            success: true,
+            message: 'Mot de passe réinitialisé avec succès'
+        });
     } catch (error) {
         console.error('Erreur réinitialisation mot de passe:', error);
-        return res.status(500).json({ success: false, message: 'Erreur lors de la réinitialisation du mot de passe' });
+        return res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la réinitialisation du mot de passe',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    } finally {
+        if (connection) await connection.release();
     }
 });
 
