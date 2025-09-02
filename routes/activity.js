@@ -12,8 +12,7 @@ router.get('/', authenticateToken, async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
-        const { limit = 10 } = req.query;
-
+        const limit = getSafeLimit(req.query.limit);
         // Récupérer les activités avec les informations utilisateur de base
         const query = `
             SELECT 
@@ -91,5 +90,11 @@ function getIconForAction(type) {
     };
     return icons[type] || 'info-circle';
 }
+
+const getSafeLimit = (value, fallback = 10) => {
+    const parsed = parseInt(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 
 export default router;

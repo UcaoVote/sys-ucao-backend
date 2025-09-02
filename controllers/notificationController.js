@@ -13,7 +13,6 @@ export const notificationController = {
 
             connection = await pool.getConnection();
 
-            // Récupérer les notifications de l'utilisateur
             const [notifications] = await connection.execute(
                 `SELECT n.* 
                  FROM notifications n 
@@ -23,9 +22,8 @@ export const notificationController = {
                 [req.user.id, limit, offset]
             );
 
-            // Compter le total des notifications
             const [totalResult] = await connection.execute(
-                'SELECT COUNT(*) as total FROM notifications WHERE user_id = ?',
+                'SELECT COUNT(*) as total FROM notifications WHERE userId = ?',
                 [req.user.id]
             );
 
@@ -57,9 +55,8 @@ export const notificationController = {
             const { id } = req.params;
             connection = await pool.getConnection();
 
-            // Vérifier que la notification appartient à l'utilisateur
             const [notificationRows] = await connection.execute(
-                'SELECT * FROM notifications WHERE id = ? AND user_id = ?',
+                'SELECT * FROM notifications WHERE id = ? AND userId = ?',
                 [id, req.user.id]
             );
 
@@ -67,13 +64,11 @@ export const notificationController = {
                 throw new Error('Notification non trouvée');
             }
 
-            // Marquer comme lue
             await connection.execute(
-                'UPDATE notifications SET is_read = TRUE, read_at = NOW() WHERE id = ?',
+                'UPDATE notifications SET is_read = TRUE, readAt = NOW() WHERE id = ?',
                 [id]
             );
 
-            // Récupérer la notification mise à jour
             const [updatedNotification] = await connection.execute(
                 'SELECT * FROM notifications WHERE id = ?',
                 [id]
@@ -103,7 +98,7 @@ export const notificationController = {
             connection = await pool.getConnection();
 
             await connection.execute(
-                'UPDATE notifications SET is_read = TRUE, read_at = NOW() WHERE user_id = ? AND is_read = FALSE',
+                'UPDATE notifications SET is_read = TRUE, readAt = NOW() WHERE userId = ? AND is_read = FALSE',
                 [req.user.id]
             );
 
@@ -130,9 +125,8 @@ export const notificationController = {
             const { id } = req.params;
             connection = await pool.getConnection();
 
-            // Vérifier que la notification appartient à l'utilisateur
             const [notificationRows] = await connection.execute(
-                'SELECT * FROM notifications WHERE id = ? AND user_id = ?',
+                'SELECT * FROM notifications WHERE id = ? AND userId = ?',
                 [id, req.user.id]
             );
 
@@ -168,7 +162,7 @@ export const notificationController = {
             connection = await pool.getConnection();
 
             await connection.execute(
-                'DELETE FROM notifications WHERE user_id = ?',
+                'DELETE FROM notifications WHERE userId = ?',
                 [req.user.id]
             );
 
@@ -194,15 +188,13 @@ export const notificationController = {
         try {
             connection = await pool.getConnection();
 
-            // Compter les notifications non lues
             const [unreadResult] = await connection.execute(
-                'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = FALSE',
+                'SELECT COUNT(*) as count FROM notifications WHERE userId = ? AND is_read = FALSE',
                 [req.user.id]
             );
 
-            // Compter le total des notifications
             const [totalResult] = await connection.execute(
-                'SELECT COUNT(*) as count FROM notifications WHERE user_id = ?',
+                'SELECT COUNT(*) as count FROM notifications WHERE userId = ?',
                 [req.user.id]
             );
 
@@ -222,7 +214,7 @@ export const notificationController = {
     },
 
     /**
-     * Récupérer les notifications pour les admins (toutes les notifications)
+     * Récupérer les notifications pour les admins
      */
     getAdminNotifications: async (req, res) => {
         let connection;
@@ -240,32 +232,29 @@ export const notificationController = {
 
             connection = await pool.getConnection();
 
-            // Construire la clause WHERE dynamiquement
             let whereClause = 'WHERE 1=1';
             const params = [];
 
             if (req.query.type) {
-                whereClause += ' AND type = ?';
+                whereClause += ' AND n.type = ?';
                 params.push(req.query.type);
             }
 
             if (req.query.read !== undefined) {
-                whereClause += ' AND is_read = ?';
+                whereClause += ' AND n.is_read = ?';
                 params.push(req.query.read === 'true' ? 1 : 0);
             }
 
-            // Récupérer les notifications avec pagination
             const [notifications] = await connection.execute(
                 `SELECT n.*, u.email as user_email, u.role as user_role 
                  FROM notifications n 
-                 LEFT JOIN users u ON n.user_id = u.id 
+                 LEFT JOIN users u ON n.userId = u.id 
                  ${whereClause} 
-                 ORDER BY n.created_at DESC 
+                 ORDER BY n.createdAt DESC 
                  LIMIT ? OFFSET ?`,
                 [...params, limit, offset]
             );
 
-            // Compter le total
             const [totalResult] = await connection.execute(
                 `SELECT COUNT(*) as total FROM notifications n ${whereClause}`,
                 params
