@@ -30,19 +30,27 @@ export const notificationController = {
             const total = totalResult[0].total;
 
             res.json({
-                notifications,
-                total,
-                totalPages: Math.ceil(total / limit),
-                currentPage: page
+                success: true,
+                data: {
+                    notifications,
+                    pagination: {
+                        total,
+                        totalPages: Math.ceil(total / limit),
+                        currentPage: page,
+                        limit
+                    }
+                }
             });
         } catch (error) {
             console.error('Erreur récupération notifications:', error);
             res.status(500).json({
+                success: false,
                 message: 'Erreur lors de la récupération des notifications',
-                code: 'NOTIFICATIONS_FETCH_ERROR'
+                code: 'NOTIFICATIONS_FETCH_ERROR',
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         } finally {
-            if (connection) connection.release();
+            if (connection) await connection.release();
         }
     },
 
@@ -61,11 +69,16 @@ export const notificationController = {
             );
 
             if (notificationRows.length === 0) {
-                throw new Error('Notification non trouvée');
+                return res.status(404).json({
+                    success: false,
+                    message: 'Notification non trouvée',
+                    code: 'NOTIFICATION_NOT_FOUND'
+                });
             }
 
+            // Mise à jour avec le champ existant updatedAt au lieu de readAt
             await connection.execute(
-                'UPDATE notifications SET is_read = TRUE, readAt = NOW() WHERE id = ?',
+                'UPDATE notifications SET is_read = TRUE, updatedAt = NOW() WHERE id = ?',
                 [id]
             );
 
@@ -75,17 +88,22 @@ export const notificationController = {
             );
 
             res.json({
+                success: true,
                 message: 'Notification marquée comme lue',
-                notification: updatedNotification[0]
+                data: {
+                    notification: updatedNotification[0]
+                }
             });
         } catch (error) {
             console.error('Erreur marquage notification:', error);
-            res.status(404).json({
-                message: error.message || 'Notification non trouvée',
-                code: 'NOTIFICATION_NOT_FOUND'
+            res.status(500).json({
+                success: false,
+                message: 'Erreur lors du marquage de la notification',
+                code: 'NOTIFICATION_UPDATE_ERROR',
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         } finally {
-            if (connection) connection.release();
+            if (connection) await connection.release();
         }
     },
 
@@ -98,21 +116,24 @@ export const notificationController = {
             connection = await pool.getConnection();
 
             await connection.execute(
-                'UPDATE notifications SET is_read = TRUE, readAt = NOW() WHERE userId = ? AND is_read = FALSE',
+                'UPDATE notifications SET is_read = TRUE, updatedAt = NOW() WHERE userId = ? AND is_read = FALSE',
                 [req.user.id]
             );
 
             res.json({
+                success: true,
                 message: 'Toutes les notifications marquées comme lues'
             });
         } catch (error) {
             console.error('Erreur marquage toutes notifications:', error);
             res.status(500).json({
+                success: false,
                 message: 'Erreur lors du marquage des notifications',
-                code: 'NOTIFICATIONS_MARK_ERROR'
+                code: 'NOTIFICATIONS_MARK_ERROR',
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         } finally {
-            if (connection) connection.release();
+            if (connection) await connection.release();
         }
     },
 
@@ -131,7 +152,11 @@ export const notificationController = {
             );
 
             if (notificationRows.length === 0) {
-                throw new Error('Notification non trouvée');
+                return res.status(404).json({
+                    success: false,
+                    message: 'Notification non trouvée',
+                    code: 'NOTIFICATION_NOT_FOUND'
+                });
             }
 
             await connection.execute(
@@ -140,16 +165,19 @@ export const notificationController = {
             );
 
             res.json({
+                success: true,
                 message: 'Notification supprimée avec succès'
             });
         } catch (error) {
             console.error('Erreur suppression notification:', error);
-            res.status(404).json({
-                message: error.message || 'Notification non trouvée',
-                code: 'NOTIFICATION_NOT_FOUND'
+            res.status(500).json({
+                success: false,
+                message: 'Erreur lors de la suppression de la notification',
+                code: 'NOTIFICATION_DELETE_ERROR',
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         } finally {
-            if (connection) connection.release();
+            if (connection) await connection.release();
         }
     },
 
@@ -167,16 +195,19 @@ export const notificationController = {
             );
 
             res.json({
+                success: true,
                 message: 'Toutes les notifications supprimées avec succès'
             });
         } catch (error) {
             console.error('Erreur suppression toutes notifications:', error);
             res.status(500).json({
+                success: false,
                 message: 'Erreur lors de la suppression des notifications',
-                code: 'NOTIFICATIONS_DELETE_ERROR'
+                code: 'NOTIFICATIONS_DELETE_ERROR',
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         } finally {
-            if (connection) connection.release();
+            if (connection) await connection.release();
         }
     },
 
@@ -199,17 +230,22 @@ export const notificationController = {
             );
 
             res.json({
-                total: totalResult[0].count,
-                unread: unreadResult[0].count
+                success: true,
+                data: {
+                    total: totalResult[0].count,
+                    unread: unreadResult[0].count
+                }
             });
         } catch (error) {
             console.error('Erreur stats notifications:', error);
             res.status(500).json({
+                success: false,
                 message: 'Erreur lors de la récupération des statistiques',
-                code: 'NOTIFICATIONS_STATS_ERROR'
+                code: 'NOTIFICATIONS_STATS_ERROR',
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         } finally {
-            if (connection) connection.release();
+            if (connection) await connection.release();
         }
     },
 
@@ -221,6 +257,7 @@ export const notificationController = {
         try {
             if (req.user.role !== 'ADMIN') {
                 return res.status(403).json({
+                    success: false,
                     message: 'Accès réservé aux administrateurs',
                     code: 'ADMIN_ACCESS_REQUIRED'
                 });
@@ -232,19 +269,30 @@ export const notificationController = {
 
             connection = await pool.getConnection();
 
-            let whereClause = 'WHERE 1=1';
-            const params = [];
+            // Construction dynamique de la clause WHERE
+            let whereConditions = [];
+            let params = [];
 
             if (req.query.type) {
-                whereClause += ' AND n.type = ?';
+                whereConditions.push('n.type = ?');
                 params.push(req.query.type);
             }
 
-            if (req.query.read !== undefined) {
-                whereClause += ' AND n.is_read = ?';
-                params.push(req.query.read === 'true' ? 1 : 0);
+            if (req.query.is_read !== undefined) {
+                whereConditions.push('n.is_read = ?');
+                params.push(req.query.is_read === 'true' ? 1 : 0);
             }
 
+            if (req.query.priority) {
+                whereConditions.push('n.priority = ?');
+                params.push(req.query.priority);
+            }
+
+            const whereClause = whereConditions.length > 0
+                ? `WHERE ${whereConditions.join(' AND ')}`
+                : '';
+
+            // Requête principale
             const [notifications] = await connection.execute(
                 `SELECT n.*, u.email as user_email, u.role as user_role 
                  FROM notifications n 
@@ -255,6 +303,7 @@ export const notificationController = {
                 [...params, limit, offset]
             );
 
+            // Requête de comptage
             const [totalResult] = await connection.execute(
                 `SELECT COUNT(*) as total FROM notifications n ${whereClause}`,
                 params
@@ -263,19 +312,27 @@ export const notificationController = {
             const total = totalResult[0].total;
 
             res.json({
-                notifications,
-                total,
-                totalPages: Math.ceil(total / limit),
-                currentPage: page
+                success: true,
+                data: {
+                    notifications,
+                    pagination: {
+                        total,
+                        totalPages: Math.ceil(total / limit),
+                        currentPage: page,
+                        limit
+                    }
+                }
             });
         } catch (error) {
             console.error('Erreur récupération notifications admin:', error);
             res.status(500).json({
+                success: false,
                 message: 'Erreur lors de la récupération des notifications',
-                code: 'NOTIFICATIONS_FETCH_ERROR'
+                code: 'NOTIFICATIONS_FETCH_ERROR',
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         } finally {
-            if (connection) connection.release();
+            if (connection) await connection.release();
         }
     }
 };

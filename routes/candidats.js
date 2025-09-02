@@ -1,6 +1,6 @@
 import express from 'express';
 import pool from '../config/database.js';
-import { authenticateToken } from '../middlewares/auth.js';
+import { authenticateToken, requireRole } from '../middlewares/auth.js';
 
 const router = express.Router();
 
@@ -19,11 +19,12 @@ router.get('/election/:electionId', authenticateToken, async (req, res) => {
 
         if (electionRows.length === 0) {
             return res.status(404).json({
+                success: false,
                 message: 'Élection non trouvée'
             });
         }
 
-        // Récupérer les candidats approuvés
+        // Récupérer les candidats approuvés avec la bonne syntaxe
         const [candidateRows] = await connection.execute(`
             SELECT 
                 c.*,
@@ -38,13 +39,13 @@ router.get('/election/:electionId', authenticateToken, async (req, res) => {
                 el.type as election_type,
                 COUNT(v.id) as votes_count
             FROM candidates c
-            LEFT JOIN users u ON c.user_id = u.id
-            LEFT JOIN etudiants e ON u.id = e.user_id
-            LEFT JOIN elections el ON c.election_id = el.id
-            LEFT JOIN votes v ON c.id = v.candidate_id
-            WHERE c.election_id = ? AND c.statut = 'APPROUVE'
+            LEFT JOIN users u ON c.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            LEFT JOIN elections el ON c.electionId = el.id
+            LEFT JOIN votes v ON c.id = v.candidateId
+            WHERE c.electionId = ? AND c.statut = 'APPROUVE'
             GROUP BY c.id
-            ORDER BY c.created_at DESC
+            ORDER BY c.createdAt DESC
         `, [parseInt(electionId)]);
 
         const formattedCandidates = candidateRows.map(candidate => ({
@@ -56,7 +57,7 @@ router.get('/election/:electionId', authenticateToken, async (req, res) => {
             motivation: candidate.motivation,
             photoUrl: candidate.photoUrl,
             statut: candidate.statut,
-            createdAt: candidate.created_at,
+            createdAt: candidate.createdAt,
             userDetails: candidate.etudiant_nom ? {
                 filiere: candidate.filiere,
                 annee: candidate.annee,
@@ -85,10 +86,11 @@ router.get('/election/:electionId', authenticateToken, async (req, res) => {
         console.error('Erreur récupération candidats:', error);
         res.status(500).json({
             success: false,
-            message: 'Erreur serveur lors de la récupération des candidats'
+            message: 'Erreur serveur lors de la récupération des candidats',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
@@ -107,6 +109,7 @@ router.get('/is-candidate/:electionId', authenticateToken, async (req, res) => {
 
         if (electionRows.length === 0) {
             return res.status(404).json({
+                success: false,
                 message: 'Élection non trouvée',
                 isCandidate: false
             });
@@ -119,13 +122,14 @@ router.get('/is-candidate/:electionId', authenticateToken, async (req, res) => {
                 el.titre as election_titre,
                 el.type as election_type
             FROM candidates c
-            LEFT JOIN elections el ON c.election_id = el.id
-            WHERE c.user_id = ? AND c.election_id = ?
+            LEFT JOIN elections el ON c.electionId = el.id
+            WHERE c.userId = ? AND c.electionId = ?
         `, [req.user.id, parseInt(electionId)]);
 
         if (candidateRows.length > 0) {
             const candidate = candidateRows[0];
             res.json({
+                success: true,
                 isCandidate: true,
                 candidate: {
                     id: candidate.id,
@@ -133,16 +137,17 @@ router.get('/is-candidate/:electionId', authenticateToken, async (req, res) => {
                     prenom: candidate.prenom,
                     programme: candidate.programme,
                     photoUrl: candidate.photoUrl,
-                    createdAt: candidate.created_at
+                    createdAt: candidate.createdAt
                 },
                 election: {
-                    id: candidate.election_id,
+                    id: candidate.electionId,
                     titre: candidate.election_titre,
                     type: candidate.election_type
                 }
             });
         } else {
             res.json({
+                success: true,
                 isCandidate: false,
                 message: 'Vous n\'êtes pas candidat à cette élection'
             });
@@ -151,11 +156,13 @@ router.get('/is-candidate/:electionId', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Erreur vérification candidature:', error);
         res.status(500).json({
+            success: false,
             message: 'Erreur serveur',
-            isCandidate: false
+            isCandidate: false,
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
@@ -174,15 +181,15 @@ router.get('/mes-candidatures', authenticateToken, async (req, res) => {
                 el.titre as election_titre,
                 el.type as election_type,
                 el.description as election_description,
-                el.date_debut as election_dateDebut,
-                el.date_fin as election_dateFin,
+                el.dateDebut as election_dateDebut,
+                el.dateFin as election_dateFin,
                 COUNT(v.id) as votes_count
             FROM candidates c
-            LEFT JOIN elections el ON c.election_id = el.id
-            LEFT JOIN votes v ON c.id = v.candidate_id
-            WHERE c.user_id = ?
+            LEFT JOIN elections el ON c.electionId = el.id
+            LEFT JOIN votes v ON c.id = v.candidateId
+            WHERE c.userId = ?
             GROUP BY c.id
-            ORDER BY c.created_at DESC
+            ORDER BY c.createdAt DESC
         `, [userId]);
 
         // Formater la réponse
@@ -195,8 +202,8 @@ router.get('/mes-candidatures', authenticateToken, async (req, res) => {
             motivation: candidature.motivation,
             photoUrl: candidature.photoUrl,
             statut: candidature.statut,
-            createdAt: candidature.created_at,
-            updatedAt: candidature.updated_at,
+            createdAt: candidature.createdAt,
+            updatedAt: candidature.updatedAt,
             election: {
                 id: candidature.election_id,
                 titre: candidature.election_titre,
@@ -218,10 +225,11 @@ router.get('/mes-candidatures', authenticateToken, async (req, res) => {
         console.error('Erreur récupération candidatures:', error);
         res.status(500).json({
             success: false,
-            message: 'Erreur serveur lors de la récupération des candidatures'
+            message: 'Erreur serveur lors de la récupération des candidatures',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
@@ -233,7 +241,10 @@ router.get('/:id', async (req, res) => {
         const candidateId = parseInt(req.params.id);
 
         if (isNaN(candidateId)) {
-            return res.status(400).json({ message: 'ID de candidat invalide' });
+            return res.status(400).json({
+                success: false,
+                message: 'ID de candidat invalide'
+            });
         }
 
         const [candidateRows] = await connection.execute(`
@@ -250,52 +261,62 @@ router.get('/:id', async (req, res) => {
                 el.type as election_type,
                 COUNT(v.id) as votes_count
             FROM candidates c
-            LEFT JOIN users u ON c.user_id = u.id
-            LEFT JOIN etudiants e ON u.id = e.user_id
-            LEFT JOIN elections el ON c.election_id = el.id
-            LEFT JOIN votes v ON c.id = v.candidate_id
+            LEFT JOIN users u ON c.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            LEFT JOIN elections el ON c.electionId = el.id
+            LEFT JOIN votes v ON c.id = v.candidateId
             WHERE c.id = ?
             GROUP BY c.id
         `, [candidateId]);
 
         if (candidateRows.length === 0) {
-            return res.status(404).json({ message: 'Candidat non trouvé' });
+            return res.status(404).json({
+                success: false,
+                message: 'Candidat non trouvé'
+            });
         }
 
         const candidate = candidateRows[0];
         res.json({
-            id: candidate.id,
-            nom: candidate.nom,
-            prenom: candidate.prenom,
-            slogan: candidate.slogan,
-            programme: candidate.programme,
-            motivation: candidate.motivation,
-            photoUrl: candidate.photoUrl,
-            statut: candidate.statut,
-            createdAt: candidate.created_at,
-            user: {
-                email: candidate.email,
-                etudiant: candidate.etudiant_nom ? {
-                    nom: candidate.etudiant_nom,
-                    prenom: candidate.etudiant_prenom,
-                    filiere: candidate.filiere,
-                    annee: candidate.annee,
-                    ecole: candidate.ecole,
-                    photoUrl: candidate.etudiant_photoUrl
-                } : null
-            },
-            election: {
-                titre: candidate.election_titre,
-                type: candidate.election_type
-            },
-            votesCount: candidate.votes_count
+            success: true,
+            data: {
+                id: candidate.id,
+                nom: candidate.nom,
+                prenom: candidate.prenom,
+                slogan: candidate.slogan,
+                programme: candidate.programme,
+                motivation: candidate.motivation,
+                photoUrl: candidate.photoUrl,
+                statut: candidate.statut,
+                createdAt: candidate.createdAt,
+                user: {
+                    email: candidate.email,
+                    etudiant: candidate.etudiant_nom ? {
+                        nom: candidate.etudiant_nom,
+                        prenom: candidate.etudiant_prenom,
+                        filiere: candidate.filiere,
+                        annee: candidate.annee,
+                        ecole: candidate.ecole,
+                        photoUrl: candidate.etudiant_photoUrl
+                    } : null
+                },
+                election: {
+                    titre: candidate.election_titre,
+                    type: candidate.election_type
+                },
+                votesCount: candidate.votes_count
+            }
         });
 
     } catch (error) {
         console.error('Error fetching candidate:', error);
-        res.status(500).json({ message: 'Erreur serveur' });
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
@@ -308,7 +329,7 @@ router.post('/', authenticateToken, async (req, res) => {
         const userId = req.user.id;
 
         // Validation des champs requis
-        if (!userId || !electionId || !slogan || !photo || !programme || !motivation) {
+        if (!electionId || !slogan || !photo || !programme || !motivation) {
             return res.status(400).json({
                 success: false,
                 message: 'Tous les champs sont requis: electionId, slogan, photo, programme, motivation'
@@ -319,7 +340,7 @@ router.post('/', authenticateToken, async (req, res) => {
         const [userRows] = await connection.execute(`
             SELECT u.*, e.nom, e.prenom 
             FROM users u 
-            LEFT JOIN etudiants e ON u.id = e.user_id 
+            LEFT JOIN etudiants e ON u.id = e.userId 
             WHERE u.id = ?
         `, [userId]);
 
@@ -345,7 +366,7 @@ router.post('/', authenticateToken, async (req, res) => {
 
         // Vérifier que l'utilisateur n'est pas déjà candidat
         const [existingCandidateRows] = await connection.execute(
-            'SELECT id FROM candidates WHERE user_id = ? AND election_id = ?',
+            'SELECT id FROM candidates WHERE userId = ? AND electionId = ?',
             [userId, parseInt(electionId)]
         );
 
@@ -377,26 +398,36 @@ router.post('/', authenticateToken, async (req, res) => {
             });
         }
 
-        // Créer la candidature
+        // Créer la candidature avec les bons noms de colonnes
         const [result] = await connection.execute(`
-            INSERT INTO candidates (nom, prenom, slogan, programme, motivation, photo_url, user_id, election_id, statut, created_at, updated_at)
+            INSERT INTO candidates (nom, prenom, slogan, programme, motivation, photoUrl, userId, electionId, statut, createdAt, updatedAt)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'EN_ATTENTE', NOW(), NOW())
         `, [nom, prenom, slogan, programme, motivation, photo, userId, parseInt(electionId)]);
 
         res.status(201).json({
             success: true,
             message: 'Candidature déposée avec succès',
-            candidate: { id: result.insertId }
+            data: {
+                id: result.insertId,
+                nom,
+                prenom,
+                slogan,
+                programme,
+                motivation,
+                photoUrl: photo,
+                statut: 'EN_ATTENTE'
+            }
         });
 
     } catch (error) {
         console.error('❌ Erreur création candidature:', error);
         res.status(500).json({
             success: false,
-            message: 'Erreur serveur lors de la création de la candidature'
+            message: 'Erreur serveur lors de la création de la candidature',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
@@ -409,36 +440,52 @@ router.put('/:candidateId/programme', authenticateToken, async (req, res) => {
         const { programme } = req.body;
 
         if (isNaN(candidateId) || !programme) {
-            return res.status(400).json({ message: 'Paramètres invalides' });
+            return res.status(400).json({
+                success: false,
+                message: 'Paramètres invalides'
+            });
         }
 
         // Vérifier que le candidat existe et appartient à l'utilisateur
         const [candidateRows] = await connection.execute(
-            'SELECT id, user_id FROM candidates WHERE id = ?',
+            'SELECT id, userId FROM candidates WHERE id = ?',
             [candidateId]
         );
 
         if (candidateRows.length === 0) {
-            return res.status(404).json({ message: 'Candidat introuvable' });
+            return res.status(404).json({
+                success: false,
+                message: 'Candidat introuvable'
+            });
         }
 
-        if (candidateRows[0].user_id !== req.user.id) {
-            return res.status(403).json({ message: 'Non autorisé' });
+        if (candidateRows[0].userId !== req.user.id) {
+            return res.status(403).json({
+                success: false,
+                message: 'Non autorisé'
+            });
         }
 
         // Mettre à jour le programme
         await connection.execute(
-            'UPDATE candidates SET programme = ?, updated_at = NOW() WHERE id = ?',
+            'UPDATE candidates SET programme = ?, updatedAt = NOW() WHERE id = ?',
             [programme, candidateId]
         );
 
-        res.json({ message: 'Programme mis à jour' });
+        res.json({
+            success: true,
+            message: 'Programme mis à jour'
+        });
 
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Erreur serveur' });
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
@@ -454,7 +501,7 @@ router.get('/', async (req, res) => {
         let params = [];
 
         if (electionId) {
-            whereClause += ' AND c.election_id = ?';
+            whereClause += ' AND c.electionId = ?';
             params.push(parseInt(electionId));
         }
 
@@ -476,10 +523,10 @@ router.get('/', async (req, res) => {
                 el.type as election_type,
                 COUNT(v.id) as votes_count
             FROM candidates c
-            LEFT JOIN users u ON c.user_id = u.id
-            LEFT JOIN etudiants e ON u.id = e.user_id
-            LEFT JOIN elections el ON c.election_id = el.id
-            LEFT JOIN votes v ON c.id = v.candidate_id
+            LEFT JOIN users u ON c.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            LEFT JOIN elections el ON c.electionId = el.id
+            LEFT JOIN votes v ON c.id = v.candidateId
             WHERE ${whereClause}
             GROUP BY c.id
             ORDER BY c.nom ASC
@@ -495,45 +542,45 @@ router.get('/', async (req, res) => {
         const totalPages = Math.ceil(total / parseInt(limit));
 
         res.json({
-            candidates: candidateRows,
-            pagination: {
-                currentPage: parseInt(page),
-                totalPages,
-                totalCandidates: total,
-                hasNext: parseInt(page) < totalPages,
-                hasPrev: parseInt(page) > 1
+            success: true,
+            data: {
+                candidates: candidateRows,
+                pagination: {
+                    currentPage: parseInt(page),
+                    totalPages,
+                    totalCandidates: total,
+                    hasNext: parseInt(page) < totalPages,
+                    hasPrev: parseInt(page) > 1
+                }
             }
         });
 
     } catch (error) {
         console.error('Error fetching candidates:', error);
-        res.status(500).json({ message: 'Erreur serveur' });
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
 // Modifier un candidat (Admin seulement)
-router.put('/:id', authenticateToken, async (req, res) => {
+router.put('/:id', authenticateToken, requireRole('ADMIN'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
-
-        // Vérifier que l'utilisateur est admin
-        const [userRows] = await connection.execute(
-            'SELECT role FROM users WHERE id = ?',
-            [req.user.id]
-        );
-
-        if (userRows.length === 0 || userRows[0].role !== 'ADMIN') {
-            return res.status(403).json({ message: 'Accès refusé' });
-        }
 
         const candidateId = parseInt(req.params.id);
         const { nom, prenom, programme, photoUrl } = req.body;
 
         if (isNaN(candidateId)) {
-            return res.status(400).json({ message: 'ID de candidat invalide' });
+            return res.status(400).json({
+                success: false,
+                message: 'ID de candidat invalide'
+            });
         }
 
         // Construire la requête de mise à jour dynamiquement
@@ -556,62 +603,65 @@ router.put('/:id', authenticateToken, async (req, res) => {
         }
 
         if (photoUrl !== undefined) {
-            updateFields.push('photo_url = ?');
+            updateFields.push('photoUrl = ?');
             updateValues.push(photoUrl);
         }
 
         if (updateFields.length === 0) {
-            return res.status(400).json({ message: 'Aucun champ à mettre à jour' });
+            return res.status(400).json({
+                success: false,
+                message: 'Aucun champ à mettre à jour'
+            });
         }
 
         updateValues.push(candidateId);
 
         await connection.execute(`
-            UPDATE candidates SET ${updateFields.join(', ')}, updated_at = NOW() WHERE id = ?
+            UPDATE candidates SET ${updateFields.join(', ')}, updatedAt = NOW() WHERE id = ?
         `, updateValues);
 
         // Récupérer le candidat mis à jour
         const [updatedCandidateRows] = await connection.execute(`
             SELECT c.*, u.email, e.* 
             FROM candidates c
-            LEFT JOIN users u ON c.user_id = u.id
-            LEFT JOIN etudiants e ON u.id = e.user_id
+            LEFT JOIN users u ON c.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
             WHERE c.id = ?
         `, [candidateId]);
 
         res.json({
+            success: true,
             message: 'Candidat mis à jour avec succès',
-            candidate: updatedCandidateRows[0]
+            data: {
+                candidate: updatedCandidateRows[0]
+            }
         });
 
     } catch (error) {
         console.error('Error updating candidate:', error);
-        res.status(500).json({ message: 'Erreur serveur' });
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
 // Supprimer un candidat (Admin seulement)
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete('/:id', authenticateToken, requireRole('ADMIN'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
 
-        // Vérifier que l'utilisateur est admin
-        const [userRows] = await connection.execute(
-            'SELECT role FROM users WHERE id = ?',
-            [req.user.id]
-        );
-
-        if (userRows.length === 0 || userRows[0].role !== 'ADMIN') {
-            return res.status(403).json({ message: 'Accès refusé' });
-        }
-
         const candidateId = parseInt(req.params.id);
 
         if (isNaN(candidateId)) {
-            return res.status(400).json({ message: 'ID de candidat invalide' });
+            return res.status(400).json({
+                success: false,
+                message: 'ID de candidat invalide'
+            });
         }
 
         await connection.execute(
@@ -619,31 +669,28 @@ router.delete('/:id', authenticateToken, async (req, res) => {
             [candidateId]
         );
 
-        res.json({ message: 'Candidat supprimé avec succès' });
+        res.json({
+            success: true,
+            message: 'Candidat supprimé avec succès'
+        });
 
     } catch (error) {
         console.error('Error deleting candidate:', error);
-        res.status(500).json({ message: 'Erreur serveur' });
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
 // Liste des candidats pour l'admin avec filtres
-router.get('/admin/list', authenticateToken, async (req, res) => {
+router.get('/admin/list', authenticateToken, requireRole('ADMIN'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
-
-        // Vérifier que l'utilisateur est admin
-        const [userRows] = await connection.execute(
-            'SELECT role FROM users WHERE id = ?',
-            [req.user.id]
-        );
-
-        if (userRows.length === 0 || userRows[0].role !== 'ADMIN') {
-            return res.status(403).json({ message: 'Accès refusé' });
-        }
 
         const {
             electionId,
@@ -654,38 +701,37 @@ router.get('/admin/list', authenticateToken, async (req, res) => {
         } = req.query;
 
         // Construction de la clause WHERE
-        let whereClause = '1=1';
+        let whereConditions = ['1=1'];
         let params = [];
 
         if (electionId && electionId !== 'all') {
-            whereClause += ' AND c.election_id = ?';
+            whereConditions.push('c.electionId = ?');
             params.push(parseInt(electionId));
         }
 
         if (statut && statut !== 'all') {
-            whereClause += ' AND c.statut = ?';
+            whereConditions.push('c.statut = ?');
             params.push(statut);
         }
 
         if (search) {
-            whereClause += ` AND (
+            whereConditions.push(`(
                 c.nom LIKE ? OR 
                 c.prenom LIKE ? OR 
                 u.email LIKE ? OR 
                 e.matricule LIKE ? OR 
                 e.filiere LIKE ? OR 
                 el.titre LIKE ?
-            )`;
+            )`);
             const searchPattern = `%${search}%`;
-            params.push(
-                searchPattern, searchPattern, searchPattern,
-                searchPattern, searchPattern, searchPattern
-            );
+            for (let i = 0; i < 6; i++) params.push(searchPattern);
         }
+
+        const whereClause = whereConditions.join(' AND ');
 
         // Pagination
         const offset = (parseInt(page) - 1) * parseInt(limit);
-        params.push(parseInt(limit), offset);
+        const queryParams = [...params, parseInt(limit), offset];
 
         const [candidateRows] = await connection.execute(`
             SELECT 
@@ -699,29 +745,29 @@ router.get('/admin/list', authenticateToken, async (req, res) => {
                 el.id as election_id,
                 el.titre as election_titre,
                 el.type as election_type,
-                el.date_debut as election_dateDebut,
-                el.date_fin as election_dateFin,
+                el.dateDebut as election_dateDebut,
+                el.dateFin as election_dateFin,
                 COUNT(v.id) as votes_count
             FROM candidates c
-            LEFT JOIN users u ON c.user_id = u.id
-            LEFT JOIN etudiants e ON u.id = e.user_id
-            LEFT JOIN elections el ON c.election_id = el.id
-            LEFT JOIN votes v ON c.id = v.candidate_id
+            LEFT JOIN users u ON c.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            LEFT JOIN elections el ON c.electionId = el.id
+            LEFT JOIN votes v ON c.id = v.candidateId
             WHERE ${whereClause}
             GROUP BY c.id
-            ORDER BY c.created_at DESC
+            ORDER BY c.createdAt DESC
             LIMIT ? OFFSET ?
-        `, params);
+        `, queryParams);
 
         // Compter le total
         const [countRows] = await connection.execute(`
             SELECT COUNT(*) as total 
             FROM candidates c
-            LEFT JOIN users u ON c.user_id = u.id
-            LEFT JOIN etudiants e ON u.id = e.user_id
-            LEFT JOIN elections el ON c.election_id = el.id
+            LEFT JOIN users u ON c.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            LEFT JOIN elections el ON c.electionId = el.id
             WHERE ${whereClause}
-        `, params.slice(0, -2)); // Remove limit and offset for count
+        `, params);
 
         const total = countRows[0].total;
         const totalPages = Math.ceil(total / parseInt(limit));
@@ -734,15 +780,14 @@ router.get('/admin/list', authenticateToken, async (req, res) => {
             slogan: candidate.slogan,
             programme: candidate.programme,
             motivation: candidate.motivation,
-            photoUrl: candidate.photo_url,
+            photoUrl: candidate.photoUrl,
             statut: candidate.statut,
-            createdAt: candidate.created_at,
-            updatedAt: candidate.updated_at,
+            createdAt: candidate.createdAt,
+            updatedAt: candidate.updatedAt,
             user: {
-                id: candidate.user_id,
+                id: candidate.userId,
                 email: candidate.email,
                 etudiant: candidate.matricule ? {
-                    id: candidate.etudiant_id,
                     matricule: candidate.matricule,
                     filiere: candidate.filiere,
                     annee: candidate.annee,
@@ -762,13 +807,15 @@ router.get('/admin/list', authenticateToken, async (req, res) => {
 
         res.json({
             success: true,
-            candidates: formattedCandidates,
-            pagination: {
-                currentPage: parseInt(page),
-                totalPages,
-                totalCandidates: total,
-                hasNext: parseInt(page) < totalPages,
-                hasPrev: parseInt(page) > 1
+            data: {
+                candidates: formattedCandidates,
+                pagination: {
+                    currentPage: parseInt(page),
+                    totalPages,
+                    totalCandidates: total,
+                    hasNext: parseInt(page) < totalPages,
+                    hasPrev: parseInt(page) > 1
+                }
             }
         });
 
@@ -776,28 +823,19 @@ router.get('/admin/list', authenticateToken, async (req, res) => {
         console.error('Erreur récupération candidats admin:', error);
         res.status(500).json({
             success: false,
-            message: 'Erreur serveur lors de la récupération des candidats'
+            message: 'Erreur serveur lors de la récupération des candidats',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
 // Statistiques pour l'admin
-router.get('/admin/stats', authenticateToken, async (req, res) => {
+router.get('/admin/stats', authenticateToken, requireRole('ADMIN'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
-
-        // Vérifier que l'utilisateur est admin
-        const [userRows] = await connection.execute(
-            'SELECT role FROM users WHERE id = ?',
-            [req.user.id]
-        );
-
-        if (userRows.length === 0 || userRows[0].role !== 'ADMIN') {
-            return res.status(403).json({ message: 'Accès refusé' });
-        }
 
         const [totalRows] = await connection.execute('SELECT COUNT(*) as total FROM candidates');
         const [enAttenteRows] = await connection.execute('SELECT COUNT(*) as count FROM candidates WHERE statut = "EN_ATTENTE"');
@@ -806,11 +844,13 @@ router.get('/admin/stats', authenticateToken, async (req, res) => {
 
         res.json({
             success: true,
-            stats: {
-                total: totalRows[0].total,
-                enAttente: enAttenteRows[0].count,
-                approuves: approuvesRows[0].count,
-                rejetes: rejetesRows[0].count
+            data: {
+                stats: {
+                    total: totalRows[0].total,
+                    enAttente: enAttenteRows[0].count,
+                    approuves: approuvesRows[0].count,
+                    rejetes: rejetesRows[0].count
+                }
             }
         });
 
@@ -818,28 +858,19 @@ router.get('/admin/stats', authenticateToken, async (req, res) => {
         console.error('Erreur récupération stats:', error);
         res.status(500).json({
             success: false,
-            message: 'Erreur serveur lors de la récupération des statistiques'
+            message: 'Erreur serveur lors de la récupération des statistiques',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
 // Mettre à jour le statut d'un candidat (Admin seulement)
-router.patch('/:id/status', authenticateToken, async (req, res) => {
+router.patch('/:id/status', authenticateToken, requireRole('ADMIN'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
-
-        // Vérifier que l'utilisateur est admin
-        const [userRows] = await connection.execute(
-            'SELECT role FROM users WHERE id = ?',
-            [req.user.id]
-        );
-
-        if (userRows.length === 0 || userRows[0].role !== 'ADMIN') {
-            return res.status(403).json({ message: 'Accès refusé' });
-        }
 
         const candidateId = parseInt(req.params.id);
         const { statut } = req.body;
@@ -862,8 +893,8 @@ router.patch('/:id/status', authenticateToken, async (req, res) => {
         const [candidateRows] = await connection.execute(`
             SELECT c.*, u.email, e.nom, e.prenom, e.matricule, e.filiere, e.annee, e.ecole
             FROM candidates c
-            LEFT JOIN users u ON c.user_id = u.id
-            LEFT JOIN etudiants e ON u.id = e.user_id
+            LEFT JOIN users u ON c.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
             WHERE c.id = ?
         `, [candidateId]);
 
@@ -876,7 +907,7 @@ router.patch('/:id/status', authenticateToken, async (req, res) => {
 
         // Mettre à jour le statut
         await connection.execute(
-            'UPDATE candidates SET statut = ?, updated_at = NOW() WHERE id = ?',
+            'UPDATE candidates SET statut = ?, updatedAt = NOW() WHERE id = ?',
             [statut, candidateId]
         );
 
@@ -886,21 +917,23 @@ router.patch('/:id/status', authenticateToken, async (req, res) => {
         res.json({
             success: true,
             message: `Statut de la candidature mis à jour avec succès`,
-            candidate: {
-                id: candidate.id,
-                nom: candidate.nom,
-                prenom: candidate.prenom,
-                statut: statut,
-                user: {
-                    email: candidate.email,
-                    etudiant: candidate.nom ? {
-                        nom: candidate.nom,
-                        prenom: candidate.prenom,
-                        matricule: candidate.matricule,
-                        filiere: candidate.filiere,
-                        annee: candidate.annee,
-                        ecole: candidate.ecole
-                    } : null
+            data: {
+                candidate: {
+                    id: candidate.id,
+                    nom: candidate.nom,
+                    prenom: candidate.prenom,
+                    statut: statut,
+                    user: {
+                        email: candidate.email,
+                        etudiant: candidate.nom ? {
+                            nom: candidate.nom,
+                            prenom: candidate.prenom,
+                            matricule: candidate.matricule,
+                            filiere: candidate.filiere,
+                            annee: candidate.annee,
+                            ecole: candidate.ecole
+                        } : null
+                    }
                 }
             }
         });
@@ -909,33 +942,27 @@ router.patch('/:id/status', authenticateToken, async (req, res) => {
         console.error('Erreur mise à jour statut:', error);
         res.status(500).json({
             success: false,
-            message: 'Erreur serveur lors de la mise à jour du statut'
+            message: 'Erreur serveur lors de la mise à jour du statut',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
 // Récupérer un candidat avec tous les détails pour l'admin
-router.get('/admin/:id', authenticateToken, async (req, res) => {
+router.get('/admin/:id', authenticateToken, requireRole('ADMIN'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
 
-        // Vérifier que l'utilisateur est admin
-        const [userRows] = await connection.execute(
-            'SELECT role FROM users WHERE id = ?',
-            [req.user.id]
-        );
-
-        if (userRows.length === 0 || userRows[0].role !== 'ADMIN') {
-            return res.status(403).json({ message: 'Accès refusé' });
-        }
-
         const candidateId = parseInt(req.params.id);
 
         if (isNaN(candidateId)) {
-            return res.status(400).json({ message: 'ID de candidat invalide' });
+            return res.status(400).json({
+                success: false,
+                message: 'ID de candidat invalide'
+            });
         }
 
         // Récupérer les détails du candidat
@@ -943,7 +970,7 @@ router.get('/admin/:id', authenticateToken, async (req, res) => {
             SELECT 
                 c.*,
                 u.email,
-                u.created_at as user_created_at,
+                u.createdAt as user_createdAt,
                 e.id as etudiant_id,
                 e.matricule,
                 e.nom as etudiant_nom,
@@ -956,16 +983,16 @@ router.get('/admin/:id', authenticateToken, async (req, res) => {
                 el.titre as election_titre,
                 el.type as election_type,
                 el.description as election_description,
-                el.date_debut as election_dateDebut,
-                el.date_fin as election_dateFin,
-                el.date_debut_candidature as election_dateDebutCandidature,
-                el.date_fin_candidature as election_dateFinCandidature,
+                el.dateDebut as election_dateDebut,
+                el.dateFin as election_dateFin,
+                el.dateDebutCandidature as election_dateDebutCandidature,
+                el.dateFinCandidature as election_dateFinCandidature,
                 COUNT(v.id) as votes_count
             FROM candidates c
-            LEFT JOIN users u ON c.user_id = u.id
-            LEFT JOIN etudiants e ON u.id = e.user_id
-            LEFT JOIN elections el ON c.election_id = el.id
-            LEFT JOIN votes v ON c.id = v.candidate_id
+            LEFT JOIN users u ON c.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            LEFT JOIN elections el ON c.electionId = el.id
+            LEFT JOIN votes v ON c.id = v.candidateId
             WHERE c.id = ?
             GROUP BY c.id
         `, [candidateId]);
@@ -986,10 +1013,10 @@ router.get('/admin/:id', authenticateToken, async (req, res) => {
                 e.filiere,
                 e.annee
             FROM votes v
-            LEFT JOIN users u ON v.user_id = u.id
-            LEFT JOIN etudiants e ON u.id = e.user_id
-            WHERE v.candidate_id = ?
-            ORDER BY v.created_at DESC
+            LEFT JOIN users u ON v.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            WHERE v.candidateId = ?
+            ORDER BY v.createdAt DESC
             LIMIT 10
         `, [candidateId]);
 
@@ -1003,14 +1030,14 @@ router.get('/admin/:id', authenticateToken, async (req, res) => {
             slogan: candidate.slogan,
             programme: candidate.programme,
             motivation: candidate.motivation,
-            photoUrl: candidate.photo_url,
+            photoUrl: candidate.photoUrl,
             statut: candidate.statut,
-            createdAt: candidate.created_at,
-            updatedAt: candidate.updated_at,
+            createdAt: candidate.createdAt,
+            updatedAt: candidate.updatedAt,
             user: {
-                id: candidate.user_id,
+                id: candidate.userId,
                 email: candidate.email,
-                createdAt: candidate.user_created_at,
+                createdAt: candidate.user_createdAt,
                 etudiant: candidate.etudiant_id ? {
                     id: candidate.etudiant_id,
                     matricule: candidate.matricule,
@@ -1034,7 +1061,7 @@ router.get('/admin/:id', authenticateToken, async (req, res) => {
             },
             votes: voteRows.map(vote => ({
                 id: vote.id,
-                createdAt: vote.created_at,
+                createdAt: vote.createdAt,
                 user: {
                     email: vote.email,
                     etudiant: vote.matricule ? {
@@ -1049,17 +1076,20 @@ router.get('/admin/:id', authenticateToken, async (req, res) => {
 
         res.json({
             success: true,
-            candidate: formattedCandidate
+            data: {
+                candidate: formattedCandidate
+            }
         });
 
     } catch (error) {
         console.error('Erreur récupération détails candidat:', error);
         res.status(500).json({
             success: false,
-            message: 'Erreur serveur lors de la récupération des détails du candidat'
+            message: 'Erreur serveur lors de la récupération des détails du candidat',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 

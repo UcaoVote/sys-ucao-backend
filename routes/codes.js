@@ -27,7 +27,10 @@ router.get('/list', authenticateToken, requireRole('ADMIN'), async (req, res) =>
                 u2.email LIKE ?
             )`;
             const searchPattern = `%${search}%`;
-            for (let i = 0; i < 7; i++) params.push(searchPattern);
+            params = [
+                searchPattern, searchPattern, searchPattern, searchPattern,
+                searchPattern, searchPattern, searchPattern
+            ];
         }
 
         if (status === 'used') {
@@ -37,14 +40,14 @@ router.get('/list', authenticateToken, requireRole('ADMIN'), async (req, res) =>
         }
 
         // Requête principale
-        const [codeRows] = await connection.execute(`
+        const query = `
             SELECT 
                 rc.*,
                 u1.id AS generatedBy_userId,
                 u1.email AS generatedBy_email,
                 a1.nom AS generatedBy_nom,
                 a1.prenom AS generatedBy_prenom,
-                u2.id AS  usedBy_userId,
+                u2.id AS usedBy_userId,
                 u2.email AS usedBy_email,
                 e2.nom AS usedBy_nom,
                 e2.prenom AS usedBy_prenom
@@ -56,10 +59,13 @@ router.get('/list', authenticateToken, requireRole('ADMIN'), async (req, res) =>
             WHERE ${whereClause}
             ORDER BY rc.createdAt DESC
             LIMIT ? OFFSET ?
-        `, [...params, parseInt(limit), skip]);
+        `;
+
+        const queryParams = [...params, parseInt(limit), skip];
+        const [codeRows] = await connection.execute(query, queryParams);
 
         // Requête de comptage
-        const [countRows] = await connection.execute(`
+        const countQuery = `
             SELECT COUNT(*) AS total 
             FROM registration_codes rc
             LEFT JOIN users u1 ON rc.generatedBy = u1.id
@@ -67,8 +73,9 @@ router.get('/list', authenticateToken, requireRole('ADMIN'), async (req, res) =>
             LEFT JOIN users u2 ON rc.usedBy = u2.id
             LEFT JOIN etudiants e2 ON u2.id = e2.userId
             WHERE ${whereClause}
-        `, params);
+        `;
 
+        const [countRows] = await connection.execute(countQuery, params);
         const total = countRows[0].total;
 
         const formattedCodes = codeRows.map(code => ({
@@ -76,7 +83,7 @@ router.get('/list', authenticateToken, requireRole('ADMIN'), async (req, res) =>
             code: code.code,
             createdAt: code.createdAt,
             expiresAt: code.expiresAt,
-            used: code.used,
+            used: code.used === 1, // Convertir en boolean
             usedAt: code.usedAt,
             generatedBy: code.generatedBy_nom
                 ? `${code.generatedBy_prenom} ${code.generatedBy_nom} (${code.generatedBy_email})`
@@ -103,10 +110,11 @@ router.get('/list', authenticateToken, requireRole('ADMIN'), async (req, res) =>
         console.error("Erreur liste codes:", err);
         res.status(500).json({
             success: false,
-            message: "Erreur serveur lors de la récupération des codes"
+            message: "Erreur serveur lors de la récupération des codes",
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
@@ -125,6 +133,13 @@ router.post('/generate', authenticateToken, requireRole('ADMIN'), async (req, re
             });
         }
 
+        if (expiresInHours < 1 || expiresInHours > 720) {
+            return res.status(400).json({
+                success: false,
+                message: 'La durée d\'expiration doit être entre 1 et 720 heures'
+            });
+        }
+
         const codes = [];
         for (let i = 0; i < quantity; i++) {
             const code = generateRandomCode();
@@ -132,11 +147,14 @@ router.post('/generate', authenticateToken, requireRole('ADMIN'), async (req, re
             expiresAt.setHours(expiresAt.getHours() + parseInt(expiresInHours));
 
             await connection.execute(`
-                INSERT INTO registration_codes (code, expiresAt, generatedBy, createdAt)
-                VALUES (?, ?, ?, NOW())
+                INSERT INTO registration_codes (id, code, expiresAt, generatedBy, createdAt)
+                VALUES (UUID(), ?, ?, ?, NOW())
             `, [code, expiresAt, userId]);
 
-            codes.push(code);
+            codes.push({
+                code: code,
+                expiresAt: expiresAt
+            });
         }
 
         res.status(201).json({
@@ -149,18 +167,25 @@ router.post('/generate', authenticateToken, requireRole('ADMIN'), async (req, re
         console.error("Erreur génération code:", err);
         res.status(500).json({
             success: false,
-            message: "Erreur serveur lors de la génération du code"
+            message: "Erreur serveur lors de la génération du code",
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
     } finally {
-        if (connection) connection.release();
+        if (connection) await connection.release();
     }
 });
 
 // Fonction pour générer un code aléatoire
 function generateRandomCode() {
-    return 'UCAO-' +
-        Math.random().toString(36).substring(2, 6).toUpperCase() + '-' +
-        Math.random().toString(36).substring(2, 6).toUpperCase();
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = 'UCAO-';
+
+    for (let i = 0; i < 8; i++) {
+        if (i === 4) code += '-';
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    return code;
 }
 
 export default router;

@@ -1,21 +1,26 @@
 import express from 'express';
 import pool from '../config/database.js';
-import { authenticateToken, requireAdmin } from '../middlewares/auth.js';
-import { PasswordResetService } from '../services/passwordResetService.js';
+import { authenticateToken, requireRole } from '../middlewares/auth.js';
 
 const router = express.Router();
 
-
 // PUT /api/students/:id/status - Modifier le statut d'un étudiant
-router.put('/:id/status', authenticateToken, requireAdmin, async (req, res) => {
+router.put('/:id/status', authenticateToken, requireRole('ADMIN'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
         const { id } = req.params;
         const { actif } = req.body;
 
+        if (actif === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: 'Le champ "actif" est requis'
+            });
+        }
+
         // Vérifier que l'étudiant existe
-        const [etudiantRows] = await db.execute(
+        const [etudiantRows] = await connection.execute(
             `SELECT e.*, u.id as userId, u.actif as userActif 
              FROM etudiants e 
              LEFT JOIN users u ON e.userId = u.id 
@@ -33,14 +38,14 @@ router.put('/:id/status', authenticateToken, requireAdmin, async (req, res) => {
         const etudiant = etudiantRows[0];
 
         // Mettre à jour le statut de l'utilisateur
-        await db.execute(
+        await connection.execute(
             'UPDATE users SET actif = ? WHERE id = ?',
             [actif, etudiant.userId]
         );
 
         // Récupérer les informations mises à jour
         const [updatedUserRows] = await connection.execute(
-            `SELECT u.*, e.id as etudiantId, e.nom, e.prenom, e.filiere, e.annee 
+            `SELECT u.*, e.id as etudiantId, e.nom, e.prenom, e.filiere, e.annee, e.ecole, e.matricule
              FROM users u 
              LEFT JOIN etudiants e ON u.id = e.userId 
              WHERE u.id = ?`,
@@ -61,7 +66,9 @@ router.put('/:id/status', authenticateToken, requireAdmin, async (req, res) => {
                     nom: updatedUser.nom,
                     prenom: updatedUser.prenom,
                     filiere: updatedUser.filiere,
-                    annee: updatedUser.annee
+                    annee: updatedUser.annee,
+                    ecole: updatedUser.ecole,
+                    matricule: updatedUser.matricule
                 }
             }
         });
@@ -72,33 +79,69 @@ router.put('/:id/status', authenticateToken, requireAdmin, async (req, res) => {
             message: 'Erreur serveur lors de la modification du statut',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
+    } finally {
+        if (connection) await connection.release();
     }
 });
 
 // POST /api/students/:studentId/reset-access - Réinitialiser accès étudiant
-router.post('/:studentId/reset-access', async (req, res) => {
+router.post('/:studentId/reset-access', authenticateToken, requireRole('ADMIN'), async (req, res) => {
+    let connection;
     try {
+        connection = await pool.getConnection();
         const { studentId } = req.params;
-        const adminId = req.user?.id || null;
+        const adminId = req.user.id;
 
-        const temporaryCredentials = await PasswordResetService.resetStudentAccess(
-            adminId,
-            parseInt(studentId)
+        // Vérifier que l'étudiant existe
+        const [studentRows] = await connection.execute(
+            `SELECT e.*, u.email 
+             FROM etudiants e 
+             LEFT JOIN users u ON e.userId = u.id 
+             WHERE e.id = ?`,
+            [parseInt(studentId)]
+        );
+
+        if (studentRows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Étudiant non trouvé'
+            });
+        }
+
+        const student = studentRows[0];
+
+        // Générer un identifiant temporaire
+        const temporaryIdentifiant = `ETU-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+        const temporaryPassword = Math.random().toString(36).substring(2, 10);
+        const expirationDate = new Date();
+        expirationDate.setDate(expirationDate.getDate() + 7); // Expire dans 7 jours
+
+        // Mettre à jour l'étudiant avec l'identifiant temporaire
+        await connection.execute(
+            'UPDATE etudiants SET identifiantTemporaire = ? WHERE id = ?',
+            [temporaryIdentifiant, parseInt(studentId)]
+        );
+
+        // Mettre à jour l'utilisateur avec le mot de passe temporaire
+        await connection.execute(
+            'UPDATE users SET password = ?, tempPassword = ?, requirePasswordChange = TRUE, passwordResetExpires = ? WHERE id = ?',
+            [temporaryPassword, temporaryPassword, expirationDate, student.userId]
         );
 
         return res.json({
             success: true,
             message: 'Accès réinitialisés avec succès',
             data: {
-                temporaryIdentifiant: temporaryCredentials.temporaryIdentifiant,
-                temporaryPassword: temporaryCredentials.temporaryPassword,
-                expirationDate: temporaryCredentials.expirationDate,
+                temporaryIdentifiant,
+                temporaryPassword,
+                expirationDate,
                 requirePasswordChange: true,
                 student: {
                     id: studentId,
-                    nom: temporaryCredentials.student.nom,
-                    prenom: temporaryCredentials.student.prenom,
-                    matricule: temporaryCredentials.student.matricule
+                    nom: student.nom,
+                    prenom: student.prenom,
+                    matricule: student.matricule,
+                    email: student.email
                 }
             }
         });
@@ -109,11 +152,13 @@ router.post('/:studentId/reset-access', async (req, res) => {
             message: 'Erreur lors de la réinitialisation des accès',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
+    } finally {
+        if (connection) await connection.release();
     }
 });
 
 // Recherche étudiant par matricule
-router.get('/matricule/:matricule', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/matricule/:matricule', authenticateToken, requireRole('ADMIN'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
@@ -139,7 +184,19 @@ router.get('/matricule/:matricule', authenticateToken, requireAdmin, async (req,
         return res.json({
             success: true,
             data: {
-                ...student,
+                id: student.id,
+                nom: student.nom,
+                prenom: student.prenom,
+                matricule: student.matricule,
+                codeInscription: student.codeInscription,
+                identifiantTemporaire: student.identifiantTemporaire,
+                filiere: student.filiere,
+                annee: student.annee,
+                ecole: student.ecole,
+                photoUrl: student.photoUrl,
+                email: student.email,
+                actif: student.actif,
+                createdAt: student.createdAt,
                 status: student.actif ? 'Actif' : 'Inactif'
             }
         });
@@ -150,11 +207,13 @@ router.get('/matricule/:matricule', authenticateToken, requireAdmin, async (req,
             message: 'Erreur lors de la recherche étudiant',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
+    } finally {
+        if (connection) await connection.release();
     }
 });
 
 // Recherche étudiant par code d'inscription
-router.get('/code/:code', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/code/:code', authenticateToken, requireRole('ADMIN'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
@@ -180,7 +239,19 @@ router.get('/code/:code', authenticateToken, requireAdmin, async (req, res) => {
         return res.json({
             success: true,
             data: {
-                ...student,
+                id: student.id,
+                nom: student.nom,
+                prenom: student.prenom,
+                matricule: student.matricule,
+                codeInscription: student.codeInscription,
+                identifiantTemporaire: student.identifiantTemporaire,
+                filiere: student.filiere,
+                annee: student.annee,
+                ecole: student.ecole,
+                photoUrl: student.photoUrl,
+                email: student.email,
+                actif: student.actif,
+                createdAt: student.createdAt,
                 status: student.actif ? 'Actif' : 'Inactif'
             }
         });
@@ -191,11 +262,13 @@ router.get('/code/:code', authenticateToken, requireAdmin, async (req, res) => {
             message: 'Erreur lors de la recherche étudiant',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
+    } finally {
+        if (connection) await connection.release();
     }
 });
 
 // GET /api/students - Récupérer tous les étudiants avec pagination et filtres
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, requireRole('ADMIN'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
@@ -206,8 +279,12 @@ router.get('/', async (req, res) => {
         let whereConditions = ['u.role = "ETUDIANT"'];
         let queryParams = [];
 
-        if (status === 'active') whereConditions.push('u.actif = true');
-        if (status === 'inactive') whereConditions.push('u.actif = false');
+        if (status === 'active') {
+            whereConditions.push('u.actif = true');
+        } else if (status === 'inactive') {
+            whereConditions.push('u.actif = false');
+        }
+
         if (filiere) {
             whereConditions.push('e.filiere = ?');
             queryParams.push(filiere);
@@ -221,8 +298,9 @@ router.get('/', async (req, res) => {
             queryParams.push(ecole);
         }
         if (search) {
-            whereConditions.push(`(e.nom LIKE ? OR e.prenom LIKE ? OR e.identifiantTemporaire LIKE ? OR e.matricule LIKE ?)`);
-            queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+            whereConditions.push(`(e.nom LIKE ? OR e.prenom LIKE ? OR e.identifiantTemporaire LIKE ? OR e.matricule LIKE ? OR e.codeInscription LIKE ?)`);
+            const searchPattern = `%${search}%`;
+            for (let i = 0; i < 5; i++) queryParams.push(searchPattern);
         }
 
         const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -263,27 +341,38 @@ router.get('/', async (req, res) => {
             annee: s.annee,
             status: s.actif ? 'Actif' : 'Inactif',
             matricule: s.matricule,
-            ecole: s.ecole
+            ecole: s.ecole,
+            codeInscription: s.codeInscription,
+            photoUrl: s.photoUrl,
+            actif: s.actif
         }));
 
         res.json({
             success: true,
-            data: formattedStudents,
-            pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total,
-                pages: Math.ceil(total / parseInt(limit))
+            data: {
+                students: formattedStudents,
+                pagination: {
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    total,
+                    totalPages: Math.ceil(total / parseInt(limit))
+                }
             }
         });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ success: false, message: 'Erreur serveur' });
+        console.error('Erreur récupération étudiants:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+    } finally {
+        if (connection) await connection.release();
     }
 });
 
 // GET /api/students/stats - Statistiques globales
-router.get('/stats', async (req, res) => {
+router.get('/stats', authenticateToken, requireRole('ADMIN'), async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
@@ -321,13 +410,46 @@ router.get('/stats', async (req, res) => {
         const inactiveStudents = totalStudents - activeStudents;
         const activationRate = totalStudents ? ((activeStudents / totalStudents) * 100).toFixed(2) : '0.00';
 
+        // Statistiques par filière
+        const filiereStats = {};
+        studentsRows.forEach(student => {
+            if (!filiereStats[student.filiere]) {
+                filiereStats[student.filiere] = { total: 0, active: 0 };
+            }
+            filiereStats[student.filiere].total++;
+            if (student.actif) filiereStats[student.filiere].active++;
+        });
+
+        // Statistiques par année
+        const anneeStats = {};
+        studentsRows.forEach(student => {
+            if (!anneeStats[student.annee]) {
+                anneeStats[student.annee] = { total: 0, active: 0 };
+            }
+            anneeStats[student.annee].total++;
+            if (student.actif) anneeStats[student.annee].active++;
+        });
+
         res.json({
             success: true,
-            statistics: { totalStudents, activeStudents, inactiveStudents, activationRate }
+            data: {
+                total: totalStudents,
+                active: activeStudents,
+                inactive: inactiveStudents,
+                activationRate: parseFloat(activationRate),
+                byFiliere: filiereStats,
+                byAnnee: anneeStats
+            }
         });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ success: false, message: 'Erreur serveur' });
+        console.error('Erreur récupération statistiques:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+    } finally {
+        if (connection) await connection.release();
     }
 });
 
