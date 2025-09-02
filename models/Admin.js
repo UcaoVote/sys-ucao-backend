@@ -1,4 +1,4 @@
-const pool = require('../database/connection');
+import pool from '../database/connection.js';
 
 const Admin = {
     // Trouver un admin par son ID
@@ -65,4 +65,4 @@ const Admin = {
     }
 };
 
-module.exports = Admin;
+export default Admin;

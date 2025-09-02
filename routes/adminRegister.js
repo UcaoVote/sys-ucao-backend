@@ -1,8 +1,8 @@
-const express = require('express');
-const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
-const User = require('../models/User');
-const Admin = require('../models/Admin');
+import express from 'express';
+import bcrypt from 'bcryptjs';
+import { v4 as uuidv4 } from 'uuid';
+import User from '../models/User.js';
+import Admin from '../models/Admin.js';
 
 const router = express.Router();
 
@@ -47,4 +47,4 @@ router.post('/', async (req, res) => {
     }
 });
 
-module.exports = router;
+export default router;

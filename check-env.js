@@ -1,11 +1,23 @@
-// check-env.js
-import dotenv from 'dotenv';
-dotenv.config();
+// database/check-connection.js
+import { testConnection } from '../config/database.js';
 
-console.log('🔍 Variables d\'environnement:');
-console.log('MYSQLHOST:', process.env.MYSQLHOST);
-console.log('MYSQLUSER:', process.env.MYSQLUSER);
-console.log('MYSQLDATABASE:', process.env.MYSQLDATABASE);
-console.log('MYSQLPORT:', process.env.MYSQLPORT);
-console.log('DB_HOST:', process.env.DB_HOST);
-console.log('DB_USER:', process.env.DB_USER);
+async function check() {
+    console.log('🔍 Vérification de la connexion...');
+    const connected = await testConnection();
+    if (connected) {
+        console.log('✅ Connexion OK');
+
+        // Vérifier les tables
+        const { query } = await import('../config/database.js');
+        try {
+            const tables = await query('SHOW TABLES;');
+            console.log(`📊 ${tables.length} table(s) existante(s)`);
+        } catch (error) {
+            console.log('ℹ️ Aucune table existante');
+        }
+    } else {
+        console.log('❌ Problème de connexion');
+    }
+}
+
+check();
