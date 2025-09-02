@@ -1,5 +1,9 @@
-// routes/codes.js
+import express from 'express';
+import pool from '../config/database.js';
+import { authenticateToken, requireRole } from '../middlewares/auth.js';
 import crypto from 'crypto';
+
+const router = express.Router();
 
 // Petit helper pour parser/clamp proprement
 const toInt = (v, def, min, max) => {
@@ -179,5 +183,6 @@ function generateRegistrationCode() {
     }
     return out; // ex: UCAO-4F7K-Q8ZP
 }
+
 
 export default router;
