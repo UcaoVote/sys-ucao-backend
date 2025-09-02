@@ -12,18 +12,19 @@ router.get('/', authenticateToken, async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
-        const limit = getSafeLimit(req.query.limit);
-        // Récupérer les activités avec les informations utilisateur de base
+
+        const limit = getSafeLimit(req.query.limit); // sécurise la limite
+
         const query = `
             SELECT 
                 al.*,
-                u.id as user_id,
+                u.id AS user_id,
                 u.email,
                 u.role,
-                a.nom as admin_nom,
-                a.prenom as admin_prenom,
-                e.nom as etudiant_nom,
-                e.prenom as etudiant_prenom
+                a.nom AS admin_nom,
+                a.prenom AS admin_prenom,
+                e.nom AS etudiant_nom,
+                e.prenom AS etudiant_prenom
             FROM activity_logs al
             LEFT JOIN users u ON al.userId = u.id
             LEFT JOIN admins a ON u.id = a.userId
@@ -34,11 +35,9 @@ router.get('/', authenticateToken, async (req, res) => {
 
         const [activities] = await connection.execute(query, [parseInt(limit)]);
 
-        // Formatter les activités
         const formattedActivities = activities.map(activity => {
             let userName = activity.email || 'Utilisateur inconnu';
 
-            // Déterminer le nom selon le rôle
             if (activity.role === 'ADMIN' && activity.admin_nom) {
                 userName = `${activity.admin_nom} ${activity.admin_prenom}`;
             } else if (activity.role === 'ETUDIANT' && activity.etudiant_nom) {

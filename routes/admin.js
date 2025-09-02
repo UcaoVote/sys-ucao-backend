@@ -32,8 +32,7 @@ router.get('/me', authenticateToken, async (req, res) => {
             prenom: admin.prenom,
             poste: admin.poste,
             email: admin.email,
-            role: admin.role,
-            photoUrl: admin.photoUrl || null
+            role: admin.role
         });
     } catch (err) {
         console.error("Erreur admin/me:", err);
@@ -70,7 +69,7 @@ router.put('/update', authenticateToken, async (req, res) => {
 
         // Récupérer les données mises à jour
         const [updatedRows] = await connection.execute(
-            `SELECT a.*, u.email, u.photoUrl 
+            `SELECT a.*, u.email 
              FROM admins a 
              INNER JOIN users u ON a.userId = u.id 
              WHERE a.userId = ?`,
@@ -86,8 +85,7 @@ router.put('/update', authenticateToken, async (req, res) => {
             admin: {
                 nom: updatedAdmin.nom,
                 prenom: updatedAdmin.prenom,
-                email: updatedAdmin.email,
-                photoUrl: updatedAdmin.photoUrl
+                email: updatedAdmin.email
             }
         });
     } catch (err) {

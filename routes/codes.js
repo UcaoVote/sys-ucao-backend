@@ -44,12 +44,12 @@ router.get('/list', authenticateToken, requireRole('ADMIN'), async (req, res) =>
                 u1.email AS generatedBy_email,
                 a1.nom AS generatedBy_nom,
                 a1.prenom AS generatedBy_prenom,
-                u2.id AS usedBy_userId,
+                u2.id AS  usedBy_userId,
                 u2.email AS usedBy_email,
                 e2.nom AS usedBy_nom,
                 e2.prenom AS usedBy_prenom
             FROM registration_codes rc
-            LEFT JOIN users u1 ON rc.generateBy = u1.id
+            LEFT JOIN users u1 ON rc.generatedBy = u1.id
             LEFT JOIN admins a1 ON u1.id = a1.userId
             LEFT JOIN users u2 ON rc.usedBy = u2.id
             LEFT JOIN etudiants e2 ON u2.id = e2.userId
@@ -62,7 +62,7 @@ router.get('/list', authenticateToken, requireRole('ADMIN'), async (req, res) =>
         const [countRows] = await connection.execute(`
             SELECT COUNT(*) AS total 
             FROM registration_codes rc
-            LEFT JOIN users u1 ON rc.generateBy = u1.id
+            LEFT JOIN users u1 ON rc.generatedBy = u1.id
             LEFT JOIN admins a1 ON u1.id = a1.userId
             LEFT JOIN users u2 ON rc.usedBy = u2.id
             LEFT JOIN etudiants e2 ON u2.id = e2.userId
@@ -78,8 +78,8 @@ router.get('/list', authenticateToken, requireRole('ADMIN'), async (req, res) =>
             expiresAt: code.expiresAt,
             used: code.used,
             usedAt: code.usedAt,
-            generatedBy: code.generateBy_nom
-                ? `${code.generateBy_prenom} ${code.generateBy_nom} (${code.generateBy_email})`
+            generatedBy: code.generatedBy_nom
+                ? `${code.generatedBy_prenom} ${code.generatedBy_nom} (${code.generatedBy_email})`
                 : 'Système',
             usedBy: code.usedBy_nom
                 ? `${code.usedBy_prenom} ${code.usedBy_nom} (${code.usedBy_email})`
