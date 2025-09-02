@@ -14,7 +14,7 @@ router.get('/me', authenticateToken, async (req, res) => {
         connection = await pool.getConnection();
 
         const [adminRows] = await connection.execute(
-            `SELECT a.*, u.email, u.role, u.photoUrl 
+            `SELECT a.*, u.email, u.role 
              FROM admins a 
              INNER JOIN users u ON a.userId = u.id 
              WHERE a.userId = ?`,
@@ -39,7 +39,7 @@ router.get('/me', authenticateToken, async (req, res) => {
         console.error("Erreur admin/me:", err);
         res.status(500).json({ message: "Erreur serveur" });
     } finally {
-        if (connection) await connection.end();
+        if (connection) connection.release();
     }
 });
 
@@ -95,7 +95,7 @@ router.put('/update', authenticateToken, async (req, res) => {
         console.error("Erreur admin/update:", err);
         res.status(500).json({ message: "Erreur lors de la mise à jour" });
     } finally {
-        if (connection) await connection.end();
+        if (connection) connection.release();
     }
 });
 

@@ -25,7 +25,7 @@ router.get('/', authenticateToken, async (req, res) => {
                 a.prenom as admin_prenom,
                 e.nom as etudiant_nom,
                 e.prenom as etudiant_prenom
-            FROM activity_log al
+            FROM activity_logs al
             LEFT JOIN users u ON al.userId = u.id
             LEFT JOIN admins a ON u.id = a.userId
             LEFT JOIN etudiants e ON u.id = e.userId
@@ -64,6 +64,8 @@ router.get('/', authenticateToken, async (req, res) => {
             error: err.message,
             ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
         });
+    } finally {
+        if (connection) connection.release();
     }
 });
 

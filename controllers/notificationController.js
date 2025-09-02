@@ -17,8 +17,8 @@ export const notificationController = {
             const [notifications] = await connection.execute(
                 `SELECT n.* 
                  FROM notifications n 
-                 WHERE n.user_id = ? 
-                 ORDER BY n.created_at DESC 
+                 WHERE n.userId = ? 
+                 ORDER BY n.createdAt DESC 
                  LIMIT ? OFFSET ?`,
                 [req.user.id, limit, offset]
             );

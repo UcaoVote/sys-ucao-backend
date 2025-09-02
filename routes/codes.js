@@ -42,19 +42,19 @@ router.get('/list', authenticateToken, requireRole('ADMIN'), async (req, res) =>
         const [codeRows] = await connection.execute(`
             SELECT 
                 rc.*,
-                u1.id as generated_by_user_id,
+                u1.id as generated_by_userId,
                 u1.email as generated_by_email,
                 a1.nom as generated_by_nom,
                 a1.prenom as generated_by_prenom,
-                u2.id as used_by_user_id,
+                u2.id as used_by_userId,
                 u2.email as used_by_email,
                 e2.nom as used_by_nom,
                 e2.prenom as used_by_prenom
             FROM registration_codes rc
             LEFT JOIN users u1 ON rc.generated_by = u1.id
-            LEFT JOIN admins a1 ON u1.id = a1.user_id
+            LEFT JOIN admins a1 ON u1.id = a1.userId
             LEFT JOIN users u2 ON rc.used_by = u2.id
-            LEFT JOIN etudiants e2 ON u2.id = e2.user_id
+            LEFT JOIN etudiants e2 ON u2.id = e2.userId
             WHERE ${whereClause}
             ORDER BY rc.created_at DESC
             LIMIT ? OFFSET ?
@@ -65,9 +65,9 @@ router.get('/list', authenticateToken, requireRole('ADMIN'), async (req, res) =>
             SELECT COUNT(*) as total 
             FROM registration_codes rc
             LEFT JOIN users u1 ON rc.generated_by = u1.id
-            LEFT JOIN admins a1 ON u1.id = a1.user_id
+            LEFT JOIN admins a1 ON u1.id = a1.userId
             LEFT JOIN users u2 ON rc.used_by = u2.id
-            LEFT JOIN etudiants e2 ON u2.id = e2.user_id
+            LEFT JOIN etudiants e2 ON u2.id = e2.userId
             WHERE ${whereClause}
         `, params);
 
@@ -77,10 +77,10 @@ router.get('/list', authenticateToken, requireRole('ADMIN'), async (req, res) =>
         const formattedCodes = codeRows.map(code => ({
             id: code.id,
             code: code.code,
-            createdAt: code.created_at,
-            expiresAt: code.expires_at,
+            createdAt: code.createdAt,
+            expiresAt: code.expiresAt,
             used: code.used,
-            usedAt: code.used_at,
+            usedAt: code.usedAt,
             generatedBy: code.generated_by_nom
                 ? `${code.generated_by_prenom} ${code.generated_by_nom} (${code.generated_by_email})`
                 : 'Système',
@@ -135,8 +135,8 @@ router.post('/generate', authenticateToken, requireRole('ADMIN'), async (req, re
             expiresAt.setHours(expiresAt.getHours() + parseInt(expiresInHours));
 
             // Insérer le code dans la base de données
-            const [result] = await connection.execute(`
-                INSERT INTO registration_codes (code, expires_at, generated_by, created_at)
+            await connection.execute(`
+                INSERT INTO registration_codes (code, expiresAt, generated_by, createdAt)
                 VALUES (?, ?, ?, NOW())
             `, [code, expiresAt, userId]);
 
