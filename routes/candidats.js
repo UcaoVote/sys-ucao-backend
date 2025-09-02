@@ -4,7 +4,7 @@ import { authenticateToken, requireRole } from '../middlewares/auth.js';
 
 const router = express.Router();
 
-// Récupérer tous les candidats d'une élection spécifique
+// Récupérer tous les candidats d'une élection spécifique - VERSION CORRIGÉE
 router.get('/election/:electionId', authenticateToken, async (req, res) => {
     let connection;
     try {
@@ -24,7 +24,7 @@ router.get('/election/:electionId', authenticateToken, async (req, res) => {
             });
         }
 
-        // Récupérer les candidats approuvés avec la bonne syntaxe
+        // Récupérer les candidats approuvés avec la syntaxe CORRIGÉE
         const [candidateRows] = await connection.execute(`
             SELECT 
                 c.*,
@@ -37,14 +37,12 @@ router.get('/election/:electionId', authenticateToken, async (req, res) => {
                 e.photoUrl as etudiant_photoUrl,
                 el.titre as election_titre,
                 el.type as election_type,
-                COUNT(v.id) as votes_count
+                (SELECT COUNT(*) FROM votes v WHERE v.candidateId = c.id) as votes_count
             FROM candidates c
             LEFT JOIN users u ON c.userId = u.id
             LEFT JOIN etudiants e ON u.id = e.userId
             LEFT JOIN elections el ON c.electionId = el.id
-            LEFT JOIN votes v ON c.id = v.candidateId
             WHERE c.electionId = ? AND c.statut = 'APPROUVE'
-            GROUP BY c.id
             ORDER BY c.createdAt DESC
         `, [parseInt(electionId)]);
 
@@ -489,7 +487,7 @@ router.put('/:candidateId/programme', authenticateToken, async (req, res) => {
     }
 });
 
-// Liste des candidats avec pagination
+// Liste des candidats avec pagination - VERSION CORRIGÉE
 router.get('/', async (req, res) => {
     let connection;
     try {
@@ -507,8 +505,9 @@ router.get('/', async (req, res) => {
 
         // Pagination
         const offset = (parseInt(page) - 1) * parseInt(limit);
-        params.push(parseInt(limit), offset);
+        const queryParams = [...params, parseInt(limit), offset];
 
+        // REQUÊTE CORRIGÉE : Utiliser une sous-requête pour les counts
         const [candidateRows] = await connection.execute(`
             SELECT 
                 c.*,
@@ -521,22 +520,22 @@ router.get('/', async (req, res) => {
                 e.photoUrl as etudiant_photoUrl,
                 el.titre as election_titre,
                 el.type as election_type,
-                COUNT(v.id) as votes_count
+                (SELECT COUNT(*) FROM votes v WHERE v.candidateId = c.id) as votes_count
             FROM candidates c
             LEFT JOIN users u ON c.userId = u.id
             LEFT JOIN etudiants e ON u.id = e.userId
             LEFT JOIN elections el ON c.electionId = el.id
-            LEFT JOIN votes v ON c.id = v.candidateId
             WHERE ${whereClause}
-            GROUP BY c.id
             ORDER BY c.nom ASC
             LIMIT ? OFFSET ?
-        `, params);
+        `, queryParams);
 
-        // Compter le total
+        // Compter le total - REQUÊTE CORRIGÉE
         const [countRows] = await connection.execute(`
-            SELECT COUNT(*) as total FROM candidates c WHERE ${whereClause}
-        `, electionId ? [parseInt(electionId)] : []);
+            SELECT COUNT(*) as total 
+            FROM candidates c
+            WHERE ${whereClause}
+        `, params);
 
         const total = countRows[0].total;
         const totalPages = Math.ceil(total / parseInt(limit));
