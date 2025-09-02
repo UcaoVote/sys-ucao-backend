@@ -1,6 +1,7 @@
 import express from 'express';
 import bcrypt from 'bcrypt';
 import pool from '../config/database.js';
+import { generateUserId } from '../helpers/generateUserId.js';
 
 const router = express.Router();
 
@@ -27,25 +28,24 @@ router.post('/', async (req, res) => {
 
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
+        const userId = generateUserId();
 
         // Commencer une transaction
         await connection.beginTransaction();
 
         try {
-            // Créer l'utilisateur
-            const [userResult] = await connection.execute(
-                `INSERT INTO users (email, password, role, requirePasswordChange) 
-                 VALUES (?, ?, 'ADMIN', false)`,
-                [email, hashedPassword]
+            // Créer l'utilisateur avec UUID
+            await connection.execute(
+                `INSERT INTO users (id, email, password, role, requirePasswordChange) 
+                 VALUES (?, ?, ?, 'ADMIN', false)`,
+                [userId, email, hashedPassword]
             );
-
-            const userId = userResult.insertId;
 
             // Créer l'admin
             const [adminResult] = await connection.execute(
-                `INSERT INTO admins (userId, nom, prenom, poste, email) 
-                 VALUES (?, ?, ?, ?, ?)`,
-                [userId, nom, prenom, poste || '', email]
+                `INSERT INTO admins (userId, nom, prenom, poste) 
+                 VALUES (?, ?, ?, ?)`,
+                [userId, nom, prenom, poste || '']
             );
 
             await connection.commit();
@@ -62,7 +62,7 @@ router.post('/', async (req, res) => {
         console.error(error);
         res.status(500).json({ message: 'Erreur serveur', error: error.message });
     } finally {
-        if (connection) await connection.end();
+        if (connection) connection.release();
     }
 });
 

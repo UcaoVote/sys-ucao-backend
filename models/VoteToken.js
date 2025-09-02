@@ -3,11 +3,11 @@ import crypto from 'crypto';
 
 // Configuration de la connexion MySQL (à adapter selon votre configuration)
 const dbConfig = {
-    host: process.env.MYSQLHOST || 'localhost',
-    user: process.env.MYSQLUSER || 'root',
-    password: process.env.MYSQLPASSWORD || '',
-    database: process.env.MYSQLDATABASE || 'election_db',
-    port: process.env.MYSQLPORT || 3306,
+    host: process.env.MYSQLHOST,
+    user: process.env.MYSQLUSER,
+    password: process.env.MYSQLPASSWORD,
+    database: process.env.MYSQLDATABASE,
+    port: process.env.MYSQLPORT,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0

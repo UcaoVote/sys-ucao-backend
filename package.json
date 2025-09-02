@@ -24,7 +24,6 @@
   "author": "UCAO Tech Team",
   "license": "MIT",
   "dependencies": {
-    "mysql2": "^3.6.0",
     "axios": "^1.6.0",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
@@ -32,8 +31,10 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.6.0",
     "nodemailer": "^7.0.5",
-    "sharp": "^0.33.0"
+    "sharp": "^0.33.0",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
