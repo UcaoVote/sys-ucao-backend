@@ -487,33 +487,15 @@ router.put('/:candidateId/programme', authenticateToken, async (req, res) => {
     }
 });
 
-// Liste des candidats avec pagination - VERSION FINALE CORRIGÉE
+// Liste des candidats avec pagination - VERSION COMPLÈTEMENT CORRIGÉE
 router.get('/', async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
         const { electionId, page = 1, limit = 10 } = req.query;
 
-        // Construction de la clause WHERE et des paramètres
-        let whereClause = '';
-        let whereParams = [];
-
-        if (electionId) {
-            whereClause = 'WHERE c.electionId = ?';
-            whereParams.push(parseInt(electionId));
-        } else {
-            whereClause = 'WHERE 1=1';
-        }
-
-        // Pagination
-        const offset = (parseInt(page) - 1) * parseInt(limit);
-
-        // Construction des paramètres finaux
-        const queryParams = [...whereParams, parseInt(limit), offset];
-
-        console.log('Params:', queryParams); // Debug
-
-        const [candidateRows] = await connection.execute(`
+        // Construction de la requête principale
+        let baseQuery = `
             SELECT 
                 c.*,
                 u.email,
@@ -530,21 +512,38 @@ router.get('/', async (req, res) => {
             LEFT JOIN users u ON c.userId = u.id
             LEFT JOIN etudiants e ON u.id = e.userId
             LEFT JOIN elections el ON c.electionId = el.id
-            ${whereClause}
-            ORDER BY c.nom ASC
-            LIMIT ? OFFSET ?
-        `, queryParams);
+        `;
 
-        // Compter le total
-        const countQuery = electionId
-            ? 'SELECT COUNT(*) as total FROM candidates c WHERE c.electionId = ?'
-            : 'SELECT COUNT(*) as total FROM candidates c';
+        let countQuery = `SELECT COUNT(*) as total FROM candidates c`;
+        let params = [];
+        let countParams = [];
 
-        const countParams = electionId ? [parseInt(electionId)] : [];
+        // Ajouter la condition WHERE si nécessaire
+        if (electionId) {
+            const electionIdInt = parseInt(electionId);
+            baseQuery += ` WHERE c.electionId = ?`;
+            countQuery += ` WHERE c.electionId = ?`;
+            params.push(electionIdInt);
+            countParams.push(electionIdInt);
+        }
 
+        // Ajouter le ORDER BY et la pagination
+        baseQuery += ` ORDER BY c.nom ASC LIMIT ? OFFSET ?`;
+
+        // Paramètres de pagination
+        const limitInt = parseInt(limit);
+        const offsetInt = (parseInt(page) - 1) * limitInt;
+        params.push(limitInt, offsetInt);
+
+        console.log('Query params:', params); // Debug
+        console.log('Count params:', countParams); // Debug
+
+        // Exécuter les requêtes
+        const [candidateRows] = await connection.execute(baseQuery, params);
         const [countRows] = await connection.execute(countQuery, countParams);
+
         const total = countRows[0].total;
-        const totalPages = Math.ceil(total / parseInt(limit));
+        const totalPages = Math.ceil(total / limitInt);
 
         res.json({
             success: true,
