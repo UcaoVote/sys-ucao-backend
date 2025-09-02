@@ -2,7 +2,7 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
-import pool from '../database.js';
+import pool from '../config/database.js';
 import { authenticateToken } from '../middlewares/auth.js';
 import { PasswordResetService } from '../services/passwordResetService.js';
 

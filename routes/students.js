@@ -1,5 +1,5 @@
 import express from 'express';
-import pool from '../database.js'; // Votre connexion MySQL
+import pool from '../config/database.js';
 import { authenticateToken, requireAdmin } from '../middlewares/auth.js';
 import { PasswordResetService } from '../services/passwordResetService.js';
 

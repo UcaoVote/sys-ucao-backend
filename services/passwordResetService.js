@@ -1,5 +1,5 @@
 import bcrypt from 'bcrypt';
-import pool from '../database.js';
+import pool from '../config/database.js';
 
 export class PasswordResetService {
     // Génère un mot de passe temporaire lisible pour l'admin (retourné en clair)

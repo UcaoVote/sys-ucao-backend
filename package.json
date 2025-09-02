@@ -12,8 +12,6 @@
     "db:check": "node --env-file=.env database/check-connection.js",
     "db:clear": "node --env-file=.env database/clear-database.js",
     "db:reset": "node --env-file=.env database/reset-database.js",
-    "db:debug": "node --env-file=.env database/debug-schema.js",
-    "db:clean": "node --env-file=.env database/clean-schema.js",
     "db:init:fixed": "node --env-file=.env database/init-fixed.js",
     "db:test": "node --env-file=.env -e \"import { testConnection } from './config/database.js'; testConnection().then(() => process.exit(0)).catch(() => process.exit(1));\""
   },

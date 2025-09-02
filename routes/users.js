@@ -5,7 +5,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import bcrypt from 'bcrypt';
-import pool from '../database.js';
+import pool from '../config/database.js';
 import { authenticateToken } from '../middlewares/auth.js';
 
 const router = express.Router();
