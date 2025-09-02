@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import pool from './config/database.js';
+import pool, { testConnection } from './config/database.js';
 
 // Import des routes
 import notificationRoutes from './routes/notifications.js';
@@ -30,6 +30,9 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// Test de connexion DB au démarrage
+testConnection();
+
 // Configuration CORS
 app.use(cors({
     origin: process.env.FRONTEND_URL || 'https://sys-voteucao-frontend-64pi.vercel.app',
@@ -49,10 +52,8 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.get('/api/health', async (req, res) => {
     let connection;
     try {
-        // Vérifie la connexion DB avec MySQL
         connection = await pool.getConnection();
         await connection.query('SELECT 1');
-
         res.status(200).json({
             status: 'OK',
             message: 'Service is healthy',
@@ -70,9 +71,7 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
-// ============================================================
-
-// Routes API avec préfixe /api
+// ==================== ROUTES API ====================
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/adminRegister', adminRegisterRouter);
 app.use('/api/adminLogin', adminLoginRouter);
@@ -109,15 +108,18 @@ app.use('/api/*', (req, res) => {
     });
 });
 
-// Middleware de gestion d'erreurs global
-app.use((err, _req, res) => {
+// Middleware de gestion d'erreurs global 
+app.use((err, req, res, next) => {
     console.error('Erreur serveur:', err);
-
-    res.status(err.status || 500).json({
-        message: process.env.NODE_ENV === 'production'
-            ? 'Erreur interne du serveur'
-            : err.message
-    });
+    if (res && typeof res.status === 'function') {
+        res.status(err.status || 500).json({
+            message: process.env.NODE_ENV === 'production'
+                ? 'Erreur interne du serveur'
+                : err.message
+        });
+    } else {
+        console.error('⚠️ res.status non disponible');
+    }
 });
 
 // Démarrage du serveur
@@ -125,9 +127,9 @@ const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || '0.0.0.0';
 
 app.listen(PORT, HOST, () => {
-    console.log(`Serveur Vote UCAO démarré sur http://${HOST}:${PORT}`);
-    console.log(`Mode: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`Base de données: MySQL`);
-    console.log(`API disponible sur: http://${HOST}:${PORT}/api`);
-    console.log(`Health check: http://${HOST}:${PORT}/api/health`);
+    console.log(`✅ Serveur Vote UCAO démarré sur http://${HOST}:${PORT}`);
+    console.log(`🔧 Mode: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🗄️ Base de données: MySQL`);
+    console.log(`📡 API disponible sur: http://${HOST}:${PORT}/api`);
+    console.log(`🩺 Health check: http://${HOST}:${PORT}/api/health`);
 });
