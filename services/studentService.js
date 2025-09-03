@@ -176,39 +176,58 @@ export const studentService = {
         }
     },
 
-    async getStudentStats(filiere, annee, ecole) {
+
+    // services/studentService.js
+    async getStudents(page, limit, filiere, annee, ecole, status, search) {
         let connection;
+        let queryParams; // Déclarer queryParams à l'extérieur du try pour qu'il soit accessible dans le catch
+
         try {
             connection = await pool.getConnection();
 
-            let whereConditions = ['u.role = "ETUDIANT"'];
-            let queryParams = [];
+            const currentPage = parseIntSafe(page, 1);
+            const currentLimit = parseIntSafe(limit, 10);
+            const skip = (currentPage - 1) * currentLimit;
 
-            if (filiere) {
-                whereConditions.push('e.filiere = ?');
-                queryParams.push(filiere);
-            }
-            if (annee) {
-                whereConditions.push('e.annee = ?');
-                queryParams.push(parseInt(annee));
-            }
-            if (ecole) {
-                whereConditions.push('e.ecole = ?');
-                queryParams.push(ecole);
-            }
+            const { whereClause, queryParams: filterParams } = buildStudentFilters({ filiere, annee, ecole, status, search });
+            queryParams = filterParams; // Assigner à la variable externe
 
-            const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+            const studentsQuery = `
+            SELECT e.*, u.email, u.actif 
+            FROM etudiants e 
+            LEFT JOIN users u ON e.userId = u.id 
+            ${whereClause} 
+            ORDER BY e.nom ASC, e.prenom ASC 
+            LIMIT ? OFFSET ?
+        `;
 
-            const query = `
-                SELECT e.id, u.actif, e.filiere, e.annee, e.ecole 
-                FROM etudiants e 
-                LEFT JOIN users u ON e.userId = u.id 
-                ${whereClause}
-            `;
+            const countQuery = `
+            SELECT COUNT(*) as total 
+            FROM etudiants e 
+            LEFT JOIN users u ON e.userId = u.id 
+            ${whereClause}
+        `;
 
-            const [studentsRows] = await connection.execute(query, queryParams);
+            console.log('Params SQL:', [...queryParams, currentLimit, skip]);
 
-            return studentsRows;
+            // D'abord exécuter la requête de comptage
+            const [[totalResult]] = await connection.execute(countQuery, queryParams);
+            const total = totalResult.total;
+
+            // Ensuite exécuter la requête de sélection
+            const [studentsRows] = await connection.execute(
+                studentsQuery,
+                [...queryParams, currentLimit, skip]
+            );
+
+            return {
+                students: studentsRows,
+                total
+            };
+        } catch (err) {
+            console.error('Erreur dans studentService.getStudents:', err);
+            console.error('Paramètres de la requête:', queryParams || 'non définis');
+            throw err;
         } finally {
             if (connection) await connection.release();
         }
