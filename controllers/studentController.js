@@ -174,7 +174,6 @@ export const studentController = {
     },
 
 
-
     async getStudents(req, res) {
         try {
             // 🔍 Validation sécurisée des paramètres

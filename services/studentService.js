@@ -1,6 +1,6 @@
 // services/studentService.js
 import pool from '../config/database.js';
-import { toInt, generateTemporaryIdentifiant, generateTemporaryPassword } from '../helpers/studentHelpers.js';
+import { generateTemporaryIdentifiant, generateTemporaryPassword } from '../helpers/studentHelpers.js';
 import { parseIntSafe, buildStudentFilters } from '../helpers/validateQueryParams.js';
 
 export const studentService = {
@@ -136,22 +136,22 @@ export const studentService = {
             const { whereClause, queryParams } = buildStudentFilters({ filiere, annee, ecole, status, search });
 
             const studentsQuery = `
-            SELECT e.*, u.email, u.actif 
-            FROM etudiants e 
-            LEFT JOIN users u ON e.userId = u.id 
-            ${whereClause} 
-            ORDER BY e.nom ASC, e.prenom ASC 
-            LIMIT ? OFFSET ?
-        `;
+                SELECT e.*, u.email, u.actif 
+                FROM etudiants e 
+                LEFT JOIN users u ON e.userId = u.id 
+                ${whereClause} 
+                ORDER BY e.nom ASC, e.prenom ASC 
+                LIMIT ? OFFSET ?
+            `;
 
             const countQuery = `
-            SELECT COUNT(*) as total 
-            FROM etudiants e 
-            LEFT JOIN users u ON e.userId = u.id 
-            ${whereClause}
-        `;
+                SELECT COUNT(*) as total 
+                FROM etudiants e 
+                LEFT JOIN users u ON e.userId = u.id 
+                ${whereClause}
+            `;
 
-            console.log('Params SQL:', [...queryParams, limit, offset]);
+            console.log('Params SQL:', [...queryParams, currentLimit, skip]);
 
             const [studentsRows] = await connection.execute(
                 studentsQuery,
@@ -165,6 +165,9 @@ export const studentService = {
                 students: studentsRows,
                 total
             };
+        } catch (err) {
+            console.error('Erreur dans studentService.getStudents:', err);
+            throw err;
         } finally {
             if (connection) await connection.release();
         }
