@@ -367,6 +367,9 @@ router.get('/:id', async (req, res) => {
 router.get("/vote/my-elections", authenticateToken, async (req, res) => {
     let connection;
     try {
+        console.log("=== DEBUG MY-ELECTIONS ===");
+        console.log("User ID:", req.user.id);
+
         connection = await pool.getConnection();
 
         // 1. Récupérer l'étudiant lié à l'utilisateur connecté
@@ -375,15 +378,22 @@ router.get("/vote/my-elections", authenticateToken, async (req, res) => {
             [req.user.id]
         );
 
+        console.log("Étudiant trouvé:", etudiantRows.length);
+        console.log("Détails étudiant:", etudiantRows[0]);
+
         if (etudiantRows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Étudiant introuvable"
-            });
+            console.log("❌ Aucun étudiant trouvé pour cet utilisateur");
+            return res.status(404).json([]); // Retourner un tableau vide
         }
 
         const etudiant = etudiantRows[0];
         const now = new Date();
+
+        console.log("Filtres application:");
+        console.log("- Filière:", etudiant.filiere);
+        console.log("- Année:", etudiant.annee);
+        console.log("- École:", etudiant.ecole);
+        console.log("- Date maintenant:", now);
 
         // 2. Récupérer les élections correspondantes
         const [electionRows] = await connection.execute(`
@@ -411,15 +421,14 @@ router.get("/vote/my-elections", authenticateToken, async (req, res) => {
             now
         ]);
 
-        res.json(electionRows); // Le frontend s'attend à un tableau directement
+        console.log("Élections trouvées:", electionRows.length);
+        console.log("Détails élections:", electionRows);
+
+        res.json(electionRows);
 
     } catch (error) {
-        console.error("Erreur GET /api/vote/my-elections:", error);
-        res.status(500).json({
-            success: false,
-            message: "Erreur interne du serveur",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+        console.error("❌ Erreur GET /api/election/vote/my-elections:", error);
+        res.status(500).json([]); // Retourner un tableau vide en cas d'erreur
     } finally {
         if (connection) await connection.release();
     }
