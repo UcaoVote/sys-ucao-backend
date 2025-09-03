@@ -153,13 +153,15 @@ export const studentService = {
 
             console.log('Params SQL:', [...queryParams, currentLimit, skip]);
 
+            // Exécuter la requête de comptage
+            const [[totalResult]] = await connection.execute(countQuery, queryParams);
+            const total = totalResult.total;
+
+            // Exécuter la requête de sélection avec tous les paramètres
             const [studentsRows] = await connection.execute(
                 studentsQuery,
                 [...queryParams, currentLimit, skip]
             );
-
-            const [[totalResult]] = await connection.execute(countQuery, queryParams);
-            const total = totalResult.total;
 
             return {
                 students: studentsRows,
@@ -167,6 +169,7 @@ export const studentService = {
             };
         } catch (err) {
             console.error('Erreur dans studentService.getStudents:', err);
+            console.error('Paramètres de la requête:', [...queryParams, currentLimit, skip]);
             throw err;
         } finally {
             if (connection) await connection.release();
