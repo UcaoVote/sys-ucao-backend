@@ -395,7 +395,7 @@ router.get("/vote/my-elections", authenticateToken, async (req, res) => {
         console.log("- École:", etudiant.ecole);
         console.log("- Date maintenant:", now);
 
-        // 2. Récupérer les élections correspondantes
+
         // Modification de la requête SQL dans le backend
         const [electionRows] = await connection.execute(`
     SELECT e.*, 
