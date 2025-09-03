@@ -362,8 +362,9 @@ router.get('/:id', async (req, res) => {
     }
 });
 
+
 // Récupérer les élections de l'étudiant connecté
-router.get("/my-elections", authenticateToken, async (req, res) => {
+router.get("/vote/my-elections", authenticateToken, async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
@@ -382,32 +383,38 @@ router.get("/my-elections", authenticateToken, async (req, res) => {
         }
 
         const etudiant = etudiantRows[0];
+        const now = new Date();
 
         // 2. Récupérer les élections correspondantes
         const [electionRows] = await connection.execute(`
-            SELECT *
-            FROM elections
-            WHERE isActive = TRUE
-            AND filiere = ?
-            AND annee = ?
-            AND ecole = ?
-            AND dateDebut <= ? 
-            AND dateFin >= ?
-            ORDER BY dateDebut ASC
+            SELECT e.*, 
+                   CASE 
+                     WHEN e.dateDebut > ? THEN 'upcoming'
+                     WHEN e.dateFin < ? THEN 'completed'
+                     ELSE 'active'
+                   END as status
+            FROM elections e
+            WHERE e.isActive = TRUE
+            AND e.filiere = ?
+            AND e.annee = ?
+            AND e.ecole = ?
+            AND e.dateDebut <= ? 
+            AND e.dateFin >= ?
+            ORDER BY e.dateDebut ASC
         `, [
             etudiant.filiere,
             etudiant.annee,
             etudiant.ecole,
-            new Date(),
-            new Date()
+            now,
+            now,
+            now,
+            now
         ]);
 
-        res.json({
-            success: true,
-            data: electionRows
-        });
+        res.json(electionRows); // Le frontend s'attend à un tableau directement
+
     } catch (error) {
-        console.error("Erreur GET /my-elections:", error);
+        console.error("Erreur GET /api/vote/my-elections:", error);
         res.status(500).json({
             success: false,
             message: "Erreur interne du serveur",
