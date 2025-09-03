@@ -1,6 +1,6 @@
 // middlewares/auth.js
 import jwt from 'jsonwebtoken';
-import pool from '../config/database';
+import pool from '../config/database.js';
 
 
 
