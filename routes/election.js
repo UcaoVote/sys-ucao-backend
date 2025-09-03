@@ -396,29 +396,49 @@ router.get("/vote/my-elections", authenticateToken, async (req, res) => {
         console.log("- Date maintenant:", now);
 
         // 2. Récupérer les élections correspondantes
+        // Modification de la requête SQL dans le backend
         const [electionRows] = await connection.execute(`
-            SELECT e.*, 
-                   CASE 
-                     WHEN e.dateDebut > ? THEN 'upcoming'
-                     WHEN e.dateFin < ? THEN 'completed'
-                     ELSE 'active'
-                   END as status
-            FROM elections e
-            WHERE e.isActive = TRUE
-            AND e.filiere = ?
-            AND e.annee = ?
-            AND e.ecole = ?
-            AND e.dateDebut <= ? 
-            AND e.dateFin >= ?
-            ORDER BY e.dateDebut ASC
-        `, [
-            etudiant.filiere,
-            etudiant.annee,
+    SELECT e.*, 
+           CASE 
+             WHEN e.dateDebut > ? THEN 'upcoming'
+             WHEN e.dateFin < ? THEN 'completed'
+             ELSE 'active'
+           END as status
+    FROM elections e
+    WHERE e.isActive = TRUE
+    AND (
+        (e.filiere = ? AND e.annee = ? AND e.ecole = ?) -- Critères exacts
+        OR (e.filiere IS NULL AND e.annee IS NULL AND e.ecole = ?) -- Élections
+        OR (e.filiere IS NULL AND e.annee = ? AND e.ecole = ?) -- Élections par année/école
+        OR (e.filiere IS NULL AND e.annee IS NULL AND e.ecole IS NULL) -- Élections générales
+    )
+    AND e.dateDebut <= ? 
+    AND e.dateFin >= ?
+    ORDER BY 
+        CASE 
+            WHEN e.filiere = ? AND e.annee = ? AND e.ecole = ? THEN 1 -- Exact match first
+            WHEN e.filiere IS NULL AND e.annee IS NULL AND e.ecole = ? THEN 2
+            WHEN e.filiere IS NULL AND e.annee = ? AND e.ecole = ? THEN 3
+            ELSE 4
+        END,
+        e.dateDebut ASC
+`, [
+            // Paramètres pour le CASE
+            now, now,
+            // Critères exacts
+            etudiant.filiere, etudiant.annee, etudiant.ecole,
+            // Élections
             etudiant.ecole,
-            now,
-            now,
-            now,
-            now
+            // Élections par année/école  
+            etudiant.annee, etudiant.ecole,
+            // Dates
+            now, now,
+            // Tri - critères exacts
+            etudiant.filiere, etudiant.annee, etudiant.ecole,
+            // Tri - élections
+            etudiant.ecole,
+            // Tri - élections par année/école
+            etudiant.annee, etudiant.ecole
         ]);
 
         console.log("Élections trouvées:", electionRows.length);
