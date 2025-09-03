@@ -488,7 +488,7 @@ router.put('/:candidateId/programme', authenticateToken, async (req, res) => {
 });
 
 // Test sans pagination
-router.get('/test', async (req, res) => {
+router.get('/', async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
