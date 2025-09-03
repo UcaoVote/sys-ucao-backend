@@ -1,0 +1,179 @@
+import bcrypt from 'bcrypt';
+import pool from '../config/database.js';
+
+class UserService {
+
+    // Génère un identifiant temporaire stable
+    generateTemporaryIdentifiant() {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let identifiant = '';
+        for (let i = 0; i < 8; i++) identifiant += chars.charAt(Math.floor(Math.random() * chars.length));
+        return `TEMP${identifiant}`;
+    }
+
+    // Validations
+    validateEmail(email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+        const forbiddenChars = /[<>"'`]/;
+        return emailRegex.test(email) && !forbiddenChars.test(email);
+    }
+
+    validatePassword(password) {
+        return password.length >= 8 &&
+            /[A-Z]/.test(password) &&
+            /[0-9]/.test(password) &&
+            /[!@#$%^&*(),.?":{}|<>]/.test(password);
+    }
+
+    validateText(text) {
+        return !/[<>"'`]/.test(text);
+    }
+
+    // Vérifier si l'email existe
+    async checkEmailExists(email) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+            const [rows] = await connection.execute(
+                'SELECT id FROM users WHERE email = ?',
+                [email]
+            );
+            return rows.length > 0;
+        } finally {
+            if (connection) await connection.release();
+        }
+    }
+
+    // Vérifier le code d'inscription
+    async validateRegistrationCode(code) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+            const [rows] = await connection.execute(
+                'SELECT id, used FROM registration_codes WHERE code = ?',
+                [code]
+            );
+
+            if (rows.length === 0) {
+                return { valid: false, message: "Ce code d'inscription n'existe pas." };
+            }
+
+            if (rows[0].used) {
+                return { valid: false, message: "Ce code d'inscription a déjà été utilisé." };
+            }
+
+            return { valid: true, codeId: rows[0].id };
+        } finally {
+            if (connection) await connection.release();
+        }
+    }
+
+    // Vérifier le matricule
+    async validateMatricule(matricule) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+            const [rows] = await connection.execute(
+                'SELECT id, userId, identifiantTemporaire FROM etudiants WHERE matricule = ?',
+                [matricule]
+            );
+
+            if (rows.length === 0) {
+                return { valid: false, message: "Matricule non trouvé. Contactez l'administration." };
+            }
+
+            if (rows[0].userId) {
+                return { valid: false, message: "Ce matricule est déjà associé à un compte." };
+            }
+
+            return { valid: true, studentId: rows[0].id, tempId: rows[0].identifiantTemporaire };
+        } finally {
+            if (connection) await connection.release();
+        }
+    }
+
+    // Créer un utilisateur
+    async createUser(userData) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+
+            const hashedPassword = await bcrypt.hash(userData.password, 10);
+
+            const [result] = await connection.execute(
+                'INSERT INTO users (id, email, password, role, actif, tempPassword, requirePasswordChange) VALUES (UUID(), ?, ?, ?, ?, ?, ?)',
+                [userData.email, hashedPassword, 'ETUDIANT', true, null, false]
+            );
+
+            const [newUserRows] = await connection.execute(
+                'SELECT id FROM users WHERE email = ?',
+                [userData.email]
+            );
+
+            return newUserRows[0].id;
+        } finally {
+            if (connection) await connection.release();
+        }
+    }
+
+    // Créer un étudiant (1ère année)
+    async createFirstYearStudent(studentData, userId) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+
+            const temporaryIdentifiant = this.generateTemporaryIdentifiant();
+
+            await connection.execute(
+                `INSERT INTO etudiants 
+        (userId, nom, prenom, identifiantTemporaire, filiere, annee, codeInscription, ecole) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [userId, studentData.nom, studentData.prenom, temporaryIdentifiant,
+                    studentData.filiere, studentData.annee, studentData.code, studentData.ecole]
+            );
+
+            return temporaryIdentifiant;
+        } finally {
+            if (connection) await connection.release();
+        }
+    }
+
+    // Mettre à jour un étudiant existant (2e/3e année)
+    async updateStudent(studentData, studentId, userId) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+
+            const temporaryIdentifiant = studentData.tempId || this.generateTemporaryIdentifiant();
+
+            await connection.execute(
+                `UPDATE etudiants 
+        SET userId = ?, nom = ?, prenom = ?, identifiantTemporaire = ?, filiere = ?, annee = ?, ecole = ? 
+        WHERE id = ?`,
+                [userId, studentData.nom, studentData.prenom, temporaryIdentifiant,
+                    studentData.filiere, studentData.annee, studentData.ecole, studentId]
+            );
+
+            return temporaryIdentifiant;
+        } finally {
+            if (connection) await connection.release();
+        }
+    }
+
+    // Marquer un code d'inscription comme utilisé
+    async markCodeAsUsed(code, userId) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+
+            await connection.execute(
+                'UPDATE registration_codes SET used = TRUE, usedBy = ? WHERE code = ?',
+                [userId, code]
+            );
+        } finally {
+            if (connection) await connection.release();
+        }
+    }
+}
+
+export default new UserService();

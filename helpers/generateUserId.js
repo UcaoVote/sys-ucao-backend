@@ -1,11 +1,4 @@
-// helpers/generateUserId.js
-import { v4 as uuidv4 } from 'uuid';
-
-/**
- * Génère un identifiant UUID pour un nouvel utilisateur
- * @returns {string} UUID v4
- */
-export function generateUserId() {
-    return uuidv4();
-}
-
+// Générer un ID utilisateur unique
+export const generateUserId = () => {
+    return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+};

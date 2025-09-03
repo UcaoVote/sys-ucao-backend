@@ -5,7 +5,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import pool, { testConnection } from './config/database.js';
 
+import electionInitializer from './scripts/initElections.js';
+
 // Import des routes
+import adminAuth from './routes/adminAuth.js';
 import notificationRoutes from './routes/notifications.js';
 import activityRouter from './routes/activity.js';
 import adminRouter from './routes/admin.js';
@@ -32,7 +35,8 @@ const app = express();
 
 // Test de connexion DB au démarrage
 testConnection();
-
+// Démarrer le traitement périodique des élections
+electionInitializer.startPeriodicProcessing();
 // Configuration CORS
 app.use(cors({
     origin: process.env.FRONTEND_URL || 'https://sys-voteucao-frontend-64pi.vercel.app',
@@ -72,6 +76,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 // ==================== ROUTES API ====================
+app.use('/api/admin/auth', adminAuth);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/adminRegister', adminRegisterRouter);
 app.use('/api/adminLogin', adminLoginRouter);
