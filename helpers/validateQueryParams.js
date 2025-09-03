@@ -8,11 +8,6 @@ export function parseIntSafe(value, defaultValue) {
     return isNaN(parsed) ? defaultValue : parsed;
 }
 
-export function parseIntSafe(value, fallback = 1) {
-    const parsed = parseInt(value);
-    return isNaN(parsed) ? fallback : parsed;
-}
-
 export function parseStringSafe(value, fallback = null) {
     return typeof value === 'string' && value.trim() !== '' ? value.trim() : fallback;
 }
