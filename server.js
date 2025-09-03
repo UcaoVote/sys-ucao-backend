@@ -38,12 +38,24 @@ testConnection();
 // Démarrer le traitement périodique des élections
 electionInitializer.startPeriodicProcessing();
 // Configuration CORS
+const allowedOrigins = [
+    'https://sys-voteucao-frontend-64pi.vercel.app',
+    'http://localhost:3000'
+];
+
 app.use(cors({
-    origin: process.env.FRONTEND_URL || 'https://sys-voteucao-frontend-64pi.vercel.app',
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
 }));
+
 
 // Middlewares de base
 app.use(express.json({ limit: '10mb' }));
@@ -80,18 +92,18 @@ app.use('/api/admin/auth', adminAuth);
 app.use('/api/candidats', candidatsRouter);
 app.use('/api/userLogin', userLoginRouter);
 app.use('/api/userRegister', userRegisterRouter);
+app.use('/api/users', usersRouter);
 app.use('/api/election', electionRouter);
 app.use('/api/vote', voteRouter);
-
-/*app.use('/api/notifications', notificationRoutes);
+app.use('/api/activity', activityRouter);
+app.use('/api/codes', codesRouter);
+app.use('/api/matricules', importRouter);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRouter);
 app.use('/api/students', studentsRouter);
 app.use('/api/upload', uploadRouter);
-app.use('/api/users', usersRouter);
-app.use('/api/matricules', matriculesRouter);
-app.use('/api/codes', codesRouter);
 app.use('/api/stats', statsRouter);
-app.use('/api/activity', activityRouter);*/
+
 
 // Route de test
 app.get('/api/test', (_req, res) => {
