@@ -151,6 +151,8 @@ export const studentService = {
             ${whereClause}
         `;
 
+            console.log('Params SQL:', [...queryParams, limit, offset]);
+
             const [studentsRows] = await connection.execute(
                 studentsQuery,
                 [...queryParams, currentLimit, skip]

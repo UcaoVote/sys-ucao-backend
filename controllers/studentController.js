@@ -1,5 +1,6 @@
 // controllers/studentController.js
 import { studentService } from '../services/studentService.js';
+import { parseIntSafe } from '../helpers/validateQueryParams.js';
 
 export const studentController = {
     async updateStudentStatus(req, res) {
@@ -172,11 +173,25 @@ export const studentController = {
         }
     },
 
+
+
     async getStudents(req, res) {
         try {
-            const { page = 1, limit = 10, filiere, annee, ecole, status, search } = req.query;
-            const { students, total } = await studentService.getStudents(page, limit, filiere, annee, ecole, status, search);
+            // 🔍 Validation sécurisée des paramètres
+            const page = parseIntSafe(req.query.page, 1);
+            const limit = parseIntSafe(req.query.limit, 10);
+            const filiere = req.query.filiere || null;
+            const annee = parseIntSafe(req.query.annee);
+            const ecole = req.query.ecole || null;
+            const status = req.query.status || null;
+            const search = req.query.search || null;
 
+            // 📦 Appel du service avec paramètres validés
+            const { students, total } = await studentService.getStudents(
+                page, limit, filiere, annee, ecole, status, search
+            );
+
+            // 🧩 Formatage des données
             const formattedStudents = students.map(s => ({
                 id: s.id,
                 nom: s.nom,
@@ -193,15 +208,16 @@ export const studentController = {
                 actif: s.actif
             }));
 
+            // ✅ Réponse JSON structurée
             res.json({
                 success: true,
                 data: {
                     students: formattedStudents,
                     pagination: {
-                        page: parseInt(page),
-                        limit: parseInt(limit),
+                        page,
+                        limit,
                         total,
-                        totalPages: Math.ceil(total / parseInt(limit))
+                        totalPages: Math.ceil(total / limit)
                     }
                 }
             });
@@ -214,6 +230,7 @@ export const studentController = {
             });
         }
     },
+
 
     async getStudentStats(req, res) {
         try {
