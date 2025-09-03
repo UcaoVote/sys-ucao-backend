@@ -1,6 +1,7 @@
 // services/studentService.js
 import pool from '../config/database.js';
 import { toInt, generateTemporaryIdentifiant, generateTemporaryPassword } from '../helpers/studentHelpers.js';
+import { parseIntSafe, buildStudentFilters } from '../helpers/validateQueryParams.js';
 
 export const studentService = {
     async updateStudentStatus(studentId, actif) {
@@ -127,56 +128,32 @@ export const studentService = {
         let connection;
         try {
             connection = await pool.getConnection();
-            const skip = (parseInt(page) - 1) * parseInt(limit);
 
-            let whereConditions = ['u.role = "ETUDIANT"'];
-            let queryParams = [];
+            const currentPage = parseIntSafe(page, 1);
+            const currentLimit = parseIntSafe(limit, 10);
+            const skip = (currentPage - 1) * currentLimit;
 
-            if (status === 'active') {
-                whereConditions.push('u.actif = true');
-            } else if (status === 'inactive') {
-                whereConditions.push('u.actif = false');
-            }
-
-            if (filiere) {
-                whereConditions.push('e.filiere = ?');
-                queryParams.push(filiere);
-            }
-            if (annee) {
-                whereConditions.push('e.annee = ?');
-                queryParams.push(parseInt(annee));
-            }
-            if (ecole) {
-                whereConditions.push('e.ecole = ?');
-                queryParams.push(ecole);
-            }
-            if (search) {
-                whereConditions.push(`(e.nom LIKE ? OR e.prenom LIKE ? OR e.identifiantTemporaire LIKE ? OR e.matricule LIKE ? OR e.codeInscription LIKE ?)`);
-                const searchPattern = `%${search}%`;
-                for (let i = 0; i < 5; i++) queryParams.push(searchPattern);
-            }
-
-            const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+            const { whereClause, queryParams } = buildStudentFilters({ filiere, annee, ecole, status, search });
 
             const studentsQuery = `
-                SELECT e.*, u.email, u.actif 
-                FROM etudiants e 
-                LEFT JOIN users u ON e.userId = u.id 
-                ${whereClause} 
-                ORDER BY e.nom ASC, e.prenom ASC 
-                LIMIT ? OFFSET ?
-            `;
+            SELECT e.*, u.email, u.actif 
+            FROM etudiants e 
+            LEFT JOIN users u ON e.userId = u.id 
+            ${whereClause} 
+            ORDER BY e.nom ASC, e.prenom ASC 
+            LIMIT ? OFFSET ?
+        `;
 
             const countQuery = `
-                SELECT COUNT(*) as total 
-                FROM etudiants e 
-                LEFT JOIN users u ON e.userId = u.id 
-                ${whereClause}
-            `;
+            SELECT COUNT(*) as total 
+            FROM etudiants e 
+            LEFT JOIN users u ON e.userId = u.id 
+            ${whereClause}
+        `;
 
             const [studentsRows] = await connection.execute(
                 studentsQuery,
-                [...queryParams, parseInt(limit), skip]
+                [...queryParams, currentLimit, skip]
             );
 
             const [[totalResult]] = await connection.execute(countQuery, queryParams);
