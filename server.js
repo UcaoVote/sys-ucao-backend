@@ -9,22 +9,22 @@ import electionInitializer from './scripts/initElections.js';
 
 // Import des routes
 import adminAuth from './routes/adminAuth.js';
-import notificationRoutes from './routes/notifications.js';
-import activityRouter from './routes/activity.js';
+//import notificationRoutes from './routes/notifications.js';
+/*import activityRouter from './routes/activity.js';
 import adminRouter from './routes/admin.js';
 import adminRegisterRouter from './routes/adminRegister.js';
-import adminLoginRouter from './routes/adminLogin.js';
+import adminLoginRouter from './routes/adminLogin.js';*/
 import candidatsRouter from './routes/candidats.js';
 import electionRouter from './routes/election.js';
-import studentsRouter from './routes/students.js';
-import uploadRouter from './routes/upload.js';
+//import studentsRouter from './routes/students.js';
+//import uploadRouter from './routes/upload.js';
 import userLoginRouter from './routes/userLogin.js';
-import usersRouter from './routes/users.js';
+//import usersRouter from './routes/users.js';
 import voteRouter from './routes/vote.js';
 import userRegisterRouter from './routes/userRegister.js';
-import matriculesRouter from './routes/matricules.js';
-import codesRouter from './routes/codes.js';
-import statsRouter from './routes/stats.js';
+//import matriculesRouter from './routes/matricules.js';
+//import codesRouter from './routes/codes.js';
+//import statsRouter from './routes/stats.js';
 
 // Configuration
 dotenv.config();
@@ -77,22 +77,21 @@ app.get('/api/health', async (req, res) => {
 
 // ==================== ROUTES API ====================
 app.use('/api/admin/auth', adminAuth);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/adminRegister', adminRegisterRouter);
-app.use('/api/adminLogin', adminLoginRouter);
+app.use('/api/candidats', candidatsRouter);
+app.use('/api/userLogin', userLoginRouter);
+app.use('/api/userRegister', userRegisterRouter);
+app.use('/api/election', electionRouter);
+app.use('/api/vote', voteRouter);
+
+/*app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRouter);
 app.use('/api/students', studentsRouter);
-app.use('/api/candidats', candidatsRouter);
-app.use('/api/election', electionRouter);
 app.use('/api/upload', uploadRouter);
-app.use('/api/userLogin', userLoginRouter);
 app.use('/api/users', usersRouter);
-app.use('/api/vote', voteRouter);
-app.use('/api/userRegister', userRegisterRouter);
 app.use('/api/matricules', matriculesRouter);
 app.use('/api/codes', codesRouter);
 app.use('/api/stats', statsRouter);
-app.use('/api/activity', activityRouter);
+app.use('/api/activity', activityRouter);*/
 
 // Route de test
 app.get('/api/test', (_req, res) => {
