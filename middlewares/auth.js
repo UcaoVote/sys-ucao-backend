@@ -1,20 +1,8 @@
 // middlewares/auth.js
 import jwt from 'jsonwebtoken';
-import mysql from 'mysql2/promise';
+import pool from '../config/database';
 
-// Configuration de la connexion MySQL (pool)
-const dbConfig = {
-    host: process.env.MYSQLHOST,
-    user: process.env.MYSQLUSER,
-    password: process.env.MYSQLPASSWORD,
-    database: process.env.MYSQLDATABASE,
-    port: process.env.MYSQLPORT ? Number(process.env.MYSQLPORT) : undefined,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-};
 
-const pool = mysql.createPool(dbConfig);
 
 /**
  * Middleware d'authentification JWT
