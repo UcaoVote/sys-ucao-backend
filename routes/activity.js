@@ -6,9 +6,9 @@ import activityManager from '../controllers/activityManager.js';
 
 const router = express.Router();
 
-router.get('/', authenticateToken, activityManager.getActivityLogs);
+router.get('/', activityManager.getActivityLogs);
 router.post('/', activityManager.createActivityLog);
 router.get('/stats', authenticateToken, activityManager.getActivityStats);
-router.get('/recent', authenticateToken, activityManager.getRecentActivitiesByStudent);
+router.get('/recent', activityManager.getRecentActivitiesByStudent);
 
 export default router;
