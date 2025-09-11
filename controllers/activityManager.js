@@ -161,20 +161,23 @@ async function getRecentActivitiesByStudent(req, res) {
     try {
         const { userId, limit = 10 } = req.query;
 
-        if (!userId) {
-            return res.status(400).json({ error: 'userId requis' });
+        if (!userId || isNaN(limit)) {
+            return res.status(400).json({ error: 'Paramètres invalides' });
         }
 
-        const query = `
-      SELECT al.*, u.email, u.role
-      FROM activity_logs al
-      LEFT JOIN users u ON al.userId = u.id
-      WHERE al.userId = ?
-      ORDER BY al.createdAt DESC
-      LIMIT ?
-    `;
+        const parsedLimit = Math.min(parseInt(limit), 100);
 
-        const [logs] = await pool.execute(query, [userId, parseInt(limit)]);
+        const query = `
+  SELECT al.*, u.email, u.role
+  FROM activity_logs al
+  LEFT JOIN users u ON al.userId = u.id
+  WHERE al.userId = ?
+  ORDER BY al.createdAt DESC
+  LIMIT ?
+`;
+
+        const [logs] = await pool.execute(query, [userId, parsedLimit]);
+
         res.status(200).json({ logs });
     } catch (error) {
         console.error('Erreur lors de la récupération des activités récentes :', error);
