@@ -1,4 +1,4 @@
-import pool from '../config/database.js';
+import pool from '../dbconfig.js';
 import validationService from './validationService.js';
 
 class ResultService {

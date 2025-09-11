@@ -1,5 +1,5 @@
 // services/importService.js
-import pool from '../config/database.js';
+import pool from '../dbconfig.js';
 
 export const importService = {
     async verifyAdmin(userId) {

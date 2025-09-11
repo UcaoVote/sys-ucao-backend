@@ -3,26 +3,28 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import pool, { testConnection } from './config/database.js';
+import pool from './dbconfig.js';
+import './scripts/reminders.js';
 
 import electionInitializer from './scripts/initElections.js';
 
 // Import des routes
-import adminAuthRouter from './routes/adminAuth.js';
-import notificationRouter from './routes/notifications.js';
-import activityRouter from './routes/activity.js';
-import adminRouter from './routes/admin.js';
-import candidatsRouter from './routes/candidats.js';
-import electionRouter from './routes/election.js';
-import studentsRouter from './routes/students.js';
+
 import uploadRouter from './routes/upload.js';
-import userLoginRouter from './routes/userLogin.js';
-import usersRouter from './routes/users.js';
-import voteRouter from './routes/vote.js';
-import userRegisterRouter from './routes/userRegister.js';
 import matriculesRouter from './routes/import.js';
-import codesRouter from './routes/codes.js';
+import userLoginRouter from './routes/userLogin.js';
+import userRegisterRouter from './routes/userRegister.js';
+import adminRouter from './routes/adminAuth.js';
+import candidatsRouter from './routes/candidats.js';
+import studentsRouter from './routes/students.js';
+import electionsRouter from './routes/elections.js';
 import statsRouter from './routes/stats.js';
+import activityRouter from './routes/activity.js';
+import notificationsRouter from './routes/notifications.js';
+import codesRouter from './routes/codes.js';
+import votesRouter from './routes/votes.js';
+import institutionRouter from './routes/institution.js'
+
 
 // Configuration
 dotenv.config();
@@ -31,8 +33,17 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Test de connexion DB au démarrage
-testConnection();
+// Test DB
+app.get('/db', async (req, res) => {
+    try {
+        await pool.query('SELECT 1');
+        console.log(' Connexion DB OK');
+        res.send('Connexion DB OK');
+    } catch (error) {
+        console.error(' Erreur DB :', error.message);
+        res.status(500).send('Erreur de connexion DB');
+    }
+});
 // Démarrer le traitement périodique des élections
 electionInitializer.startPeriodicProcessing();
 // Configuration CORS
@@ -86,21 +97,22 @@ app.get('/api/health', async (req, res) => {
 });
 
 // ==================== ROUTES API ====================
-app.use('/api/admin/auth', adminAuthRouter);
-app.use('/api/candidats', candidatsRouter);
+
+app.use('/api/matricules', matriculesRouter);
+app.use('/api/upload', uploadRouter);
+app.use('/api/admin', adminRouter);
 app.use('/api/userLogin', userLoginRouter);
 app.use('/api/userRegister', userRegisterRouter);
-app.use('/api/users', usersRouter);
-app.use('/api/election', electionRouter);
-app.use('/api/vote', voteRouter);
-app.use('/api/activity', activityRouter);
-app.use('/api/codes', codesRouter);
-app.use('/api/matricules', matriculesRouter);
-app.use('/api/notifications', notificationRouter);
-app.use('/api/admin', adminRouter);
 app.use('/api/students', studentsRouter);
-app.use('/api/upload', uploadRouter);
+app.use('/api/candidats', candidatsRouter);
+app.use('/api/elections', electionsRouter);
 app.use('/api/stats', statsRouter);
+app.use('/api/activity', activityRouter);
+app.use('/api/notifications', notificationsRouter);
+app.use('/api/codes', codesRouter);
+app.use('/api/votes', votesRouter);
+app.use('/api', institutionRouter);
+
 
 
 // Route de test
@@ -114,13 +126,6 @@ app.get('/api/test', (_req, res) => {
     });
 });
 
-// Gestion des routes non trouvées
-app.use('/api/*', (req, res) => {
-    res.status(404).json({
-        message: 'Route API non trouvée',
-        path: req.originalUrl
-    });
-});
 
 // Middleware de gestion d'erreurs global 
 app.use((err, req, res, next) => {
