@@ -23,7 +23,8 @@ import activityRouter from './routes/activity.js';
 import notificationsRouter from './routes/notifications.js';
 import codesRouter from './routes/codes.js';
 import votesRouter from './routes/votes.js';
-import institutionRouter from './routes/institution.js'
+import institutionRouter from './routes/institution.js';
+import usersRouter from './routes/users.js';
 
 
 // Configuration
@@ -97,7 +98,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 // ==================== ROUTES API ====================
-
+app.use('/api/users', usersRouter);
 app.use('/api/matricules', matriculesRouter);
 app.use('/api/upload', uploadRouter);
 app.use('/api/admin', adminRouter);
