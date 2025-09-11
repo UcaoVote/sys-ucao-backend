@@ -2,7 +2,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
 import bcrypt from 'bcrypt';
-import pool from '../config/database.js';
+import pool from '../dbconfig.js';
 
 // Configuration ImgBB
 const IMGBB_UPLOAD_URL = 'https://api.imgbb.com/1/upload';
