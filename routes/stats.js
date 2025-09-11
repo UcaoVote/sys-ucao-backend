@@ -1,15 +1,14 @@
-// routes/stats.js
-import express from 'express';
-import { authenticateToken, requireRole } from '../middlewares/auth.js';
-import { statsController } from '../controllers/statsController.js';
+import express from 'express'
 
 const router = express.Router();
+import statsController from '../controllers/statsManager.js'
 
-router.get('/general', authenticateToken, statsController.getGeneralStats);
-router.get('/votes', authenticateToken, statsController.getVotesStats);
-router.get('/distribution', authenticateToken, statsController.getDistributionStats);
-router.get('/hourly', authenticateToken, statsController.getHourlyStats);
-router.get('/comparison', authenticateToken, requireRole('ADMIN'), statsController.getComparisonStats);
-router.get('/participation', authenticateToken, requireRole('ADMIN'), statsController.getParticipationStats);
+// Routes pour les statistiques
+router.get('/general', statsController.getGeneralStats);
+router.get('/votes', statsController.getVotesEvolution);
+router.get('/distribution', statsController.getVotesDistribution);
+router.get('/hourly', statsController.getHourlyParticipation);
+router.get('/comparison', statsController.getElectionsComparison);
+router.get('/export', statsController.exportStats);
 
 export default router;

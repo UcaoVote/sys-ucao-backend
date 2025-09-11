@@ -1,6 +1,6 @@
 // middlewares/auth.js
 import jwt from 'jsonwebtoken';
-import pool from '../config/database.js';
+import pool from '../dbconfig.js';
 
 
 
@@ -86,7 +86,7 @@ export const authenticateToken = async (req, res, next) => {
         return res.status(500).json({ message: "Erreur serveur lors de l'authentification" });
     } finally {
         if (connection) {
-            try { await connection.release(); } catch (e) { /* ignore */ }
+            try { await connection.release(); } catch (e) { }
         }
     }
 };

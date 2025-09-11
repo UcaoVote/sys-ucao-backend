@@ -1,4 +1,6 @@
 // helpers/codeHelpers.js
+import crypto from 'crypto';
+
 export const toInt = (v, def, min, max) => {
     const n = Number.parseInt(v, 10);
     if (Number.isNaN(n)) return def;
@@ -7,7 +9,6 @@ export const toInt = (v, def, min, max) => {
 
 export const generateRegistrationCode = () => {
     const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const crypto = require('crypto');
     const buf = crypto.randomBytes(8);
     let out = 'UCAO-';
     for (let i = 0; i < 8; i++) {

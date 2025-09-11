@@ -1,8 +1,6 @@
 import voteService from '../services/voteService.js';
 
 class VoteController {
-
-    // Récupérer un jeton de vote
     async getVoteToken(req, res) {
         try {
             const { electionId } = req.params;
@@ -32,7 +30,6 @@ class VoteController {
         }
     }
 
-    // Soumettre un vote
     async submitVote(req, res) {
         try {
             const { electionId, candidateId, voteToken } = req.body;
@@ -72,7 +69,6 @@ class VoteController {
         }
     }
 
-    // Récupérer les résultats
     async getResults(req, res) {
         try {
             const { electionId } = req.params;
@@ -100,7 +96,6 @@ class VoteController {
         }
     }
 
-    // Récupérer les résultats détaillés
     async getDetailedResults(req, res) {
         try {
             const { electionId } = req.params;
@@ -128,7 +123,6 @@ class VoteController {
         }
     }
 
-    // Vérifier le statut de vote
     async getVoteStatus(req, res) {
         try {
             const { electionId } = req.params;
@@ -148,7 +142,6 @@ class VoteController {
         }
     }
 
-    // Valider un token
     async validateToken(req, res) {
         try {
             const { electionId, voteToken } = req.body;

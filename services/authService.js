@@ -1,11 +1,11 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
-import pool from '../config/database.js';
+import pool from '../dbconfig.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret';
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_NORMAL = '8h';
-const JWT_EXPIRES_TEMP = '1h';
+//const JWT_EXPIRES_TEMP = '1h';
 
 class AuthService {
 

@@ -8,8 +8,8 @@ import pool, { testConnection } from './config/database.js';
 import electionInitializer from './scripts/initElections.js';
 
 // Import des routes
-import adminAuth from './routes/adminAuth.js';
-import notificationRoutes from './routes/notifications.js';
+import adminAuthRouter from './routes/adminAuth.js';
+import notificationRouter from './routes/notifications.js';
 import activityRouter from './routes/activity.js';
 import adminRouter from './routes/admin.js';
 import candidatsRouter from './routes/candidats.js';
@@ -86,7 +86,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 // ==================== ROUTES API ====================
-app.use('/api/admin/auth', adminAuth);
+app.use('/api/admin/auth', adminAuthRouter);
 app.use('/api/candidats', candidatsRouter);
 app.use('/api/userLogin', userLoginRouter);
 app.use('/api/userRegister', userRegisterRouter);
@@ -96,7 +96,7 @@ app.use('/api/vote', voteRouter);
 app.use('/api/activity', activityRouter);
 app.use('/api/codes', codesRouter);
 app.use('/api/matricules', matriculesRouter);
-app.use('/api/notifications', notificationRoutes);
+app.use('/api/notifications', notificationRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/students', studentsRouter);
 app.use('/api/upload', uploadRouter);

@@ -1,18 +1,38 @@
+// routes/notifications.js
 import express from 'express';
-import { notificationController } from '../controllers/notificationController.js';
-import { authenticateToken, requireAdmin } from '../middlewares/auth.js';
+import notificationsController from '../controllers/notificationsManager.js';
+import { authenticateToken, requireRole } from '../middlewares/auth.js';
+
 
 const router = express.Router();
 
-// Routes accessibles à tous les utilisateurs authentifiés
-router.get('/', authenticateToken, notificationController.getNotifications);
-router.put('/:id/read', authenticateToken, notificationController.markAsRead);
-router.put('/read-all', authenticateToken, notificationController.markAllAsRead);
-router.delete('/:id', authenticateToken, notificationController.deleteNotification);
-router.delete('/', authenticateToken, notificationController.deleteAllNotifications);
-router.get('/stats', authenticateToken, notificationController.getStats);
+// Étudiant : consulter ses notifications
+router.get(
+    '/',
+    authenticateToken,
+    requireRole('ETUDIANT'),
+    notificationsController.getUserNotifications
+);
 
-// Routes réservées aux administrateurs
-router.get('/admin', authenticateToken, requireAdmin, notificationController.getAdminNotifications);
+// Étudiant : marquer une notification comme lue
+router.patch(
+    '/:id/read',
+    authenticateToken,
+    requireRole('ETUDIANT'),
+    notificationsController.markAsRead
+);
+
+// Admin : créer une notification manuelle
+router.post(
+    '/',
+    authenticateToken,
+    requireRole('ADMIN'),
+    notificationsController.createNotification
+);
+
+router.get('/admin',
+    authenticateToken,
+    requireRole('ADMIN'),
+    notificationsController.getAdminNotifications);
 
 export default router;

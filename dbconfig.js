@@ -1,23 +1,17 @@
-// config/database.js
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
-
 dotenv.config();
 
-// Configuration de la base MySQL
-const dbConfig = {
-    host: process.env.MYSQLHOST,
-    user: process.env.MYSQLUSER,
-    password: process.env.MYSQLPASSWORD,
-    database: process.env.MYSQLDATABASE,
-    port: process.env.MYSQLPORT,
+const pool = mysql.createPool({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'db_votes',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
-};
+});
 
-// Création du pool de connexions
-let pool = mysql.createPool(dbConfig);
 
 // Vérification simple
 export async function testConnection() {
@@ -55,16 +49,5 @@ pool.on('error', (err) => {
         handleDisconnect();
     }
 });
-
-// Fonction utilitaire pour exécuter une requête
-export async function query(sql, params = []) {
-    try {
-        const [rows] = await pool.execute(sql, params);
-        return rows;
-    } catch (error) {
-        console.error('❌ Erreur SQL:', error.message);
-        throw error;
-    }
-}
 
 export default pool;

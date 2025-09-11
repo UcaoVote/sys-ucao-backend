@@ -1,13 +1,17 @@
 import userService from '../services/userService.js';
-
+import pool from '../dbconfig.js';
 class UserController {
 
     async register(req, res) {
         try {
-            const { email, password, confirmPassword, nom, prenom, filiere, annee, code, matricule, ecole } = req.body;
+            const {
+                email, password, confirmPassword,
+                nom, prenom, filiereId, ecoleId,
+                annee, codeInscription, matricule
+            } = req.body;
 
             // Validation des champs obligatoires
-            if (!email || !password || !confirmPassword || !nom || !prenom || !filiere || !annee || !ecole) {
+            if (!email || !password || !confirmPassword || !nom || !prenom || !filiereId || !ecoleId || !annee) {
                 return res.status(400).json({
                     success: false,
                     message: 'Tous les champs obligatoires sont requis.'
@@ -45,11 +49,10 @@ class UserController {
                 });
             }
 
-            if (!userService.validateText(nom) || !userService.validateText(prenom) ||
-                !userService.validateText(filiere) || !userService.validateText(ecole)) {
+            if (!userService.validateText(nom) || !userService.validateText(prenom)) {
                 return res.status(400).json({
                     success: false,
-                    message: 'Le nom, prénom, filière et école ne doivent pas contenir de caractères spéciaux.'
+                    message: 'Le nom et prénom ne doivent pas contenir de caractères spéciaux.'
                 });
             }
 
@@ -62,11 +65,20 @@ class UserController {
                 });
             }
 
+            // Vérifier que la filière appartient bien à l’école
+            const filiereValide = await userService.checkFiliereInEcole(filiereId, ecoleId);
+            if (!filiereValide) {
+                return res.status(400).json({
+                    success: false,
+                    message: "La filière sélectionnée n'appartient pas à l'école choisie."
+                });
+            }
+
             let result;
 
             // 1ère année : code d'inscription
             if (anneeInt === 1) {
-                if (!code) {
+                if (!codeInscription) {
                     return res.status(400).json({
                         success: false,
                         message: "Code d'inscription requis pour la 1ère année."
@@ -74,7 +86,9 @@ class UserController {
                 }
 
                 result = await this.handleFirstYearRegistration({
-                    email, password, nom, prenom, filiere, annee: anneeInt, code, ecole
+                    email, password, nom, prenom,
+                    filiereId, ecoleId, annee: anneeInt,
+                    codeInscription
                 });
             }
             // 2e/3e année : matricule
@@ -87,7 +101,9 @@ class UserController {
                 }
 
                 result = await this.handleUpperYearRegistration({
-                    email, password, nom, prenom, filiere, annee: anneeInt, matricule, ecole
+                    email, password, nom, prenom,
+                    filiereId, ecoleId, annee: anneeInt,
+                    matricule
                 });
             }
 
@@ -102,13 +118,14 @@ class UserController {
         }
     }
 
+
     async handleFirstYearRegistration(studentData) {
         const connection = await pool.getConnection();
         try {
             await connection.beginTransaction();
 
             // Valider le code d'inscription
-            const codeValidation = await userService.validateRegistrationCode(studentData.code);
+            const codeValidation = await userService.validateRegistrationCode(studentData.codeInscription);
             if (!codeValidation.valid) {
                 throw new Error(codeValidation.message);
             }
@@ -120,9 +137,13 @@ class UserController {
             const tempId = await userService.createFirstYearStudent(studentData, userId);
 
             // Marquer le code comme utilisé
-            await userService.markCodeAsUsed(studentData.code, userId);
+            await userService.markCodeAsUsed(studentData.codeInscription, userId);
 
             await connection.commit();
+
+            // Récupérer les noms en clair
+            const [ecoleRows] = await connection.execute(`SELECT nom FROM ecoles WHERE id = ?`, [studentData.ecoleId]);
+            const [filiereRows] = await connection.execute(`SELECT nom FROM filieres WHERE id = ?`, [studentData.filiereId]);
 
             return {
                 success: true,
@@ -133,9 +154,9 @@ class UserController {
                         nom: studentData.nom,
                         prenom: studentData.prenom,
                         identifiantTemporaire: tempId,
-                        filiere: studentData.filiere,
                         annee: studentData.annee,
-                        ecole: studentData.ecole
+                        ecole: ecoleRows[0]?.nom || null,
+                        filiere: filiereRows[0]?.nom || null
                     }
                 }
             };
@@ -170,6 +191,10 @@ class UserController {
 
             await connection.commit();
 
+            // Récupérer les noms en clair
+            const [ecoleRows] = await connection.execute(`SELECT nom FROM ecoles WHERE id = ?`, [studentData.ecoleId]);
+            const [filiereRows] = await connection.execute(`SELECT nom FROM filieres WHERE id = ?`, [studentData.filiereId]);
+
             return {
                 success: true,
                 message: 'Inscription réussie.',
@@ -180,9 +205,9 @@ class UserController {
                         prenom: studentData.prenom,
                         matricule: studentData.matricule,
                         identifiantTemporaire: tempId,
-                        filiere: studentData.filiere,
                         annee: studentData.annee,
-                        ecole: studentData.ecole
+                        ecole: ecoleRows[0]?.nom || null,
+                        filiere: filiereRows[0]?.nom || null
                     }
                 }
             };
@@ -193,6 +218,7 @@ class UserController {
             await connection.release();
         }
     }
+
 }
 
 export default new UserController();

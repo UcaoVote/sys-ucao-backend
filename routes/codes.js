@@ -1,11 +1,10 @@
 // routes/codes.js
 import express from 'express';
-import { authenticateToken, requireRole } from '../middlewares/auth.js';
 import { codeController } from '../controllers/codeController.js';
-
+import { authenticateToken, requireAdmin } from '../middlewares/auth.js';
 const router = express.Router();
 
-router.get('/list', authenticateToken, requireRole('ADMIN'), codeController.getCodeList);
-router.post('/generate', authenticateToken, requireRole('ADMIN'), codeController.generateCodes);
+router.get('/list', authenticateToken, requireAdmin, codeController.getCodeList);
+router.post('/generate', authenticateToken, requireAdmin, codeController.generateCodes);
 
 export default router;

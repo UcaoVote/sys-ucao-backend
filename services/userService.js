@@ -1,5 +1,5 @@
 import bcrypt from 'bcrypt';
-import pool from '../config/database.js';
+import pool from '../dbconfig.js';
 
 class UserService {
 
@@ -126,10 +126,18 @@ class UserService {
 
             await connection.execute(
                 `INSERT INTO etudiants 
-        (userId, nom, prenom, identifiantTemporaire, filiere, annee, codeInscription, ecole) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [userId, studentData.nom, studentData.prenom, temporaryIdentifiant,
-                    studentData.filiere, studentData.annee, studentData.code, studentData.ecole]
+            (userId, nom, prenom, identifiantTemporaire, filiereId, annee, codeInscription, ecoleId) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    userId,
+                    studentData.nom,
+                    studentData.prenom,
+                    temporaryIdentifiant,
+                    studentData.filiereId,
+                    studentData.annee,
+                    studentData.codeInscription,
+                    studentData.ecoleId
+                ]
             );
 
             return temporaryIdentifiant;
@@ -137,6 +145,7 @@ class UserService {
             if (connection) await connection.release();
         }
     }
+
 
     // Mettre à jour un étudiant existant (2e/3e année)
     async updateStudent(studentData, studentId, userId) {
@@ -174,6 +183,15 @@ class UserService {
             if (connection) await connection.release();
         }
     }
+
+    async checkFiliereInEcole(filiereId, ecoleId) {
+        const [rows] = await pool.execute(
+            `SELECT id FROM filieres WHERE id = ? AND ecoleId = ?`,
+            [filiereId, ecoleId]
+        );
+        return rows.length > 0;
+    }
+
 }
 
 export default new UserService();
