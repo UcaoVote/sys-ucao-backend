@@ -161,12 +161,11 @@ async function getRecentActivitiesByStudent(req, res) {
     try {
         const { userId, limit = 10 } = req.query;
 
-        if (!userId || isNaN(limit)) {
+        if (!userId || userId === 'undefined' || isNaN(limit)) {
             return res.status(400).json({ error: 'Paramètres invalides' });
         }
 
         const parsedLimit = Math.min(parseInt(limit), 100);
-
         const query = `
   SELECT al.*, u.email, u.role
   FROM activity_logs al
