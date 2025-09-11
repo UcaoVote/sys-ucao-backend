@@ -161,11 +161,15 @@ async function getRecentActivitiesByStudent(req, res) {
     try {
         const { userId, limit = 10 } = req.query;
 
-        if (!userId || userId === 'undefined' || isNaN(limit)) {
-            return res.status(400).json({ error: 'Paramètres invalides' });
+        if (!userId || typeof userId !== 'string') {
+            return res.status(400).json({ error: 'Paramètre userId invalide' });
         }
 
-        const parsedLimit = Math.min(parseInt(limit), 100);
+        const parsedLimit = parseInt(limit);
+        if (isNaN(parsedLimit) || parsedLimit <= 0) {
+            return res.status(400).json({ error: 'Paramètre limit invalide' });
+        }
+        console.log("Requête SQL avec :", { userId, parsedLimit });
         const query = `
   SELECT al.*, u.email, u.role
   FROM activity_logs al
