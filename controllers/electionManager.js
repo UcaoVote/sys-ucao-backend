@@ -4,6 +4,13 @@ import NotificationService from '../services/notificationService.js';
 import ActivityManager from '../controllers/activityManager.js';
 
 
+function toMySQLDateTime(dateString) {
+    if (!dateString) return null;
+    const date = new Date(dateString);
+    return date.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+
 async function getStudentInfo(userId) {
     try {
         const [rows] = await pool.execute(`
@@ -373,10 +380,10 @@ async function createElection(req, res) {
             safeValue(type),
             safeValue(titre),
             safeValue(description, ''),
-            safeValue(dateDebut),
-            safeValue(dateFin),
-            safeValue(dateDebutCandidature),
-            safeValue(dateFinCandidature),
+            toMySQLDateTime(dateDebut),
+            toMySQLDateTime(dateFin),
+            toMySQLDateTime(dateDebutCandidature),
+            toMySQLDateTime(dateFinCandidature),
             safeFiliereId,
             safeValue(annee),
             safeValue(ecoleId),
