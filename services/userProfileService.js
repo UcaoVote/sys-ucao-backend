@@ -9,6 +9,7 @@ const IMGBB_UPLOAD_URL = 'https://api.imgbb.com/1/upload';
 
 class UserProfileService {
 
+
     // Récupérer le profil étudiant
     async getStudentProfile(userId) {
         let connection;
@@ -25,12 +26,19 @@ class UserProfileService {
                 throw new Error('Accès réservé aux étudiants');
             }
 
-            // Récupérer le profil étudiant
+            // Récupérer le profil étudiant avec les noms des filières et écoles
             const [etudiantRows] = await connection.execute(
-                `SELECT e.*, u.email, u.role 
-         FROM etudiants e 
-         INNER JOIN users u ON e.userId = u.id 
-         WHERE e.userId = ?`,
+                `SELECT 
+                e.*, 
+                u.email, 
+                u.role,
+                f.nom AS nomFiliere,    
+                ec.nom AS nomEcole      
+             FROM etudiants e 
+             INNER JOIN users u ON e.userId = u.id 
+             LEFT JOIN filieres f ON e.filiereId = f.id    
+             LEFT JOIN ecoles ec ON e.ecoleId = ec.id       
+             WHERE e.userId = ?`,
                 [userId]
             );
 
@@ -48,7 +56,10 @@ class UserProfileService {
                 codeInscription: etudiant.codeInscription,
                 nom: etudiant.nom,
                 prenom: etudiant.prenom,
-                filiere: etudiant.filiere,
+                filiere: etudiant.nomFiliere,
+                filiereId: etudiant.filiereId,
+                ecole: etudiant.nomEcole,
+                ecoleId: etudiant.ecoleId,
                 annee: etudiant.annee,
                 photoUrl: etudiant.photoUrl
             };
@@ -56,7 +67,6 @@ class UserProfileService {
             if (connection) await connection.release();
         }
     }
-
     // Mettre à jour le profil étudiant
     async updateStudentProfile(userId, updateData) {
         let connection;
