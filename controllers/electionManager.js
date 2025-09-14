@@ -350,7 +350,7 @@ async function createElection(req, res) {
         const {
             type, titre, description, dateDebut, dateFin,
             dateDebutCandidature, dateFinCandidature, filiereId,
-            annee, ecoleId, niveau, delegueType, resultsVisibility, tour
+            annee, ecoleId, niveau, delegueType, resultsVisibility, tour, responsableType
         } = req.body;
 
         // Validation des données obligatoires
