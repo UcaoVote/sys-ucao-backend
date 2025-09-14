@@ -368,13 +368,14 @@ async function createElection(req, res) {
 
         // Préparation de l'insertion
         const query = `
-            INSERT INTO elections (
-                type, titre, description, dateDebut, dateFin, 
-                dateDebutCandidature, dateFinCandidature, filiereId, 
-                annee, ecoleId, niveau, delegueType, resultsVisibility, tour
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
+    INSERT INTO elections (
+        type, titre, description, dateDebut, dateFin, 
+        dateDebutCandidature, dateFinCandidature, filiereId, 
+        annee, ecoleId, niveau, delegueType, resultsVisibility, tour, responsableType
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
+
 
         const values = [
             safeValue(type),
@@ -390,10 +391,10 @@ async function createElection(req, res) {
             safeValue(niveau),
             safeValue(delegueType),
             safeValue(resultsVisibility),
-            safeValue(tour, 1)
+            safeValue(tour, 1),
+            safeValue(responsableType)
         ];
 
-        console.log('DEBUG INSERT election values:', values);
 
         const [result] = await pool.execute(query, values);
         const electionId = result.insertId;
