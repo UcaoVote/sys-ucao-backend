@@ -1,5 +1,5 @@
 import pool from '../dbconfig.js';
-import ActivityManager from './activityManager.js';
+import ActivityManager from '..controllers/activityManager.js';
 import NotificationService from '../services/notificationService.js';
 
 /*FONCTIONS CÔTÉ ÉTUDIANT */
