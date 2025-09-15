@@ -147,6 +147,7 @@ router.get('/my-candidature', authenticateToken, async (req, res) => {
     }
 });
 
+
 // Liste des candidats pour une élection spécifique
 router.get('/elections/:electionId', authenticateToken, async (req, res) => {
     let connection;
@@ -156,9 +157,22 @@ router.get('/elections/:electionId', authenticateToken, async (req, res) => {
 
         const [candidates] = await connection.execute(`
             SELECT 
-                c.*,
+                c.id AS candidatId,
+                c.nom AS candidatNom,
+                c.prenom AS candidatPrenom,
+                c.slogan,
+                c.programme,
+                c.motivation,
+                c.photoUrl,
+                c.statut,
+                c.createdAt,
                 u.email,
-                u.matricule,
+                et.id AS etudiantId,
+                et.codeInscription,
+                et.nom AS etudiantNom,
+                et.prenom AS etudiantPrenom,
+                et.annee,
+                et.photoUrl AS etudiantPhoto,
                 e.nom AS ecole_nom,
                 f.nom AS filiere_nom
             FROM candidates c
@@ -185,6 +199,7 @@ router.get('/elections/:electionId', authenticateToken, async (req, res) => {
         if (connection) await connection.release();
     }
 });
+
 
 router.post('/', authenticateToken, async (req, res) => {
     let connection;
