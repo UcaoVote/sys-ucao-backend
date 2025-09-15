@@ -1,5 +1,5 @@
 import express from 'express';
-import pool from '../config/db.js';
+import pool from '../dbconfig.js';
 import voteController from '../controllers/voteController.js';
 import { authenticateToken, requireRole } from '../middlewares/auth.js';
 import { validateVoting } from '../middlewares/electionValidation.js';
