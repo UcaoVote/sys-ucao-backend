@@ -1,6 +1,7 @@
 import express from 'express';
 import candidatManager from '../controllers/candidatManager.js';
 import { authenticateToken } from '../middlewares/auth.js';
+import pool from '../dbconfig.js';
 
 const router = express.Router();
 
