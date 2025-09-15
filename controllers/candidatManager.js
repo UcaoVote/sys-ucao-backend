@@ -1,4 +1,6 @@
 import pool from '../dbconfig.js';
+import ActivityManager from './activityManager.js';
+import NotificationService from '../services/notificationService.js';
 
 /*FONCTIONS CÔTÉ ÉTUDIANT */
 
@@ -163,7 +165,7 @@ async function addCandidature(data) {
         const candidatureId = result.insertId;
 
         // Log d’activité
-        await createActivityLog({
+        await ActivityManager.createActivityLog({
             action: 'Soumission de candidature',
             details: `Candidature soumise pour l'élection "${election.titre}"`,
             userId: data.userId,

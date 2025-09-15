@@ -147,12 +147,6 @@ router.get('/my-candidature', authenticateToken, async (req, res) => {
 });
 
 // Liste des candidats pour une élection spécifique
-// Dans candidatsRouter.js - CHANGEZ cette route :
-router.get('/election/:id', authenticateToken, async (req, res) => {
-    // ... code existant
-});
-
-// POUR :
 router.get('/elections/:electionId', authenticateToken, async (req, res) => {
     let connection;
     try {
