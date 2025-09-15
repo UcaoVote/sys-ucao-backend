@@ -110,17 +110,35 @@ router.get('/is-candidate/:electionId', authenticateToken, async (req, res) => {
 });
 
 // Mes candidatures
+// Récupérer les candidatures de l'utilisateur connecté
 router.get('/my-candidature', authenticateToken, async (req, res) => {
     let connection;
     try {
+        const userId = req.user?.id;
+
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: "Utilisateur non authentifié"
+            });
+        }
+
         connection = await pool.getConnection();
-        const userId = req.user.id;
 
         const [candidatures] = await connection.execute(`
             SELECT 
-                c.*,
-                e.titre AS election_titre,
-                e.type AS election_type,
+                c.id AS candidatureId,
+                c.nom AS candidatNom,
+                c.prenom AS candidatPrenom,
+                c.slogan,
+                c.programme,
+                c.motivation,
+                c.photoUrl,
+                c.statut,
+                c.createdAt,
+                e.id AS electionId,
+                e.titre AS electionTitre,
+                e.type AS electionType,
                 e.dateDebut,
                 e.dateFin,
                 e.dateDebutCandidature,
@@ -131,9 +149,9 @@ router.get('/my-candidature', authenticateToken, async (req, res) => {
             ORDER BY c.createdAt DESC
         `, [userId]);
 
-        res.json({
+        res.status(200).json({
             success: true,
-            candidatures: candidatures
+            candidatures
         });
 
     } catch (error) {
