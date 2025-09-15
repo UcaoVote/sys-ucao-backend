@@ -284,7 +284,7 @@ async function updateCandidatureStatus(req, res) {
 
         const { userId, electionId, electionTitle } = rows[0];
 
-        await createActivityLog({
+        await ActivityManager.createActivityLog({
             action: 'Changement de statut de candidature',
             details: `Statut changé en "${statut}" pour l'élection "${electionTitle}"`,
             userId: adminUser.id,
