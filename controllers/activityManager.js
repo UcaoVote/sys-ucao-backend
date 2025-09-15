@@ -5,8 +5,15 @@ import pool from '../dbconfig.js';
 // Récupérer les logs d'activité
 async function getActivityLogs(req, res) {
     try {
-        const { page = 1, limit = 20, actionType, userId, startDate, endDate, module } = req.query;
+        let { page = 1, limit = 20, actionType, userId, startDate, endDate, module } = req.query;
+
+        page = parseInt(page);
+        limit = parseInt(limit);
         const offset = (page - 1) * limit;
+
+        if (isNaN(limit) || isNaN(offset)) {
+            return res.status(400).json({ error: 'Paramètres de pagination invalides' });
+        }
 
         let query = `
             SELECT al.*, u.email, u.role 
@@ -14,73 +21,57 @@ async function getActivityLogs(req, res) {
             LEFT JOIN users u ON al.userId = u.id
             WHERE 1=1
         `;
-
         let params = [];
 
-        // Compter le total pour la pagination
         let countQuery = 'SELECT COUNT(*) as total FROM activity_logs al WHERE 1=1';
         let countParams = [];
 
         if (module) {
             query += ' AND al.module = ?';
-            params.push(module);
-
             countQuery += ' AND al.module = ?';
+            params.push(module);
             countParams.push(module);
         }
 
         if (actionType) {
             query += ' AND al.actionType = ?';
-            params.push(actionType);
-        }
-
-        if (userId) {
-            query += ' AND al.userId = ?';
-            params.push(userId);
-        }
-
-        if (startDate) {
-            query += ' AND al.createdAt >= ?';
-            params.push(startDate);
-        }
-
-        if (endDate) {
-            query += ' AND al.createdAt <= ?';
-            params.push(endDate);
-        }
-
-        query += ' ORDER BY al.createdAt DESC LIMIT ? OFFSET ?';
-        params.push(parseInt(limit), offset);
-
-        const [logs] = await pool.execute(query, params);
-
-        if (actionType) {
             countQuery += ' AND al.actionType = ?';
+            params.push(actionType);
             countParams.push(actionType);
         }
 
         if (userId) {
+            query += ' AND al.userId = ?';
             countQuery += ' AND al.userId = ?';
+            params.push(userId);
             countParams.push(userId);
         }
 
         if (startDate) {
+            query += ' AND al.createdAt >= ?';
             countQuery += ' AND al.createdAt >= ?';
+            params.push(startDate);
             countParams.push(startDate);
         }
 
         if (endDate) {
+            query += ' AND al.createdAt <= ?';
             countQuery += ' AND al.createdAt <= ?';
+            params.push(endDate);
             countParams.push(endDate);
         }
 
+        query += ' ORDER BY al.createdAt DESC LIMIT ? OFFSET ?';
+        params.push(limit, offset);
+
+        const [logs] = await pool.execute(query, params);
         const [countResult] = await pool.execute(countQuery, countParams);
 
         res.json({
             logs,
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page,
+                limit,
                 total: countResult[0].total,
                 pages: Math.ceil(countResult[0].total / limit)
             }
@@ -90,6 +81,7 @@ async function getActivityLogs(req, res) {
         res.status(500).json({ error: 'Internal server error' });
     }
 }
+
 
 
 // Créer un nouveau log d'activité

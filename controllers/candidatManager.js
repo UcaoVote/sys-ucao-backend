@@ -255,27 +255,22 @@ async function deleteCandidature(candidatureId) {
 // Changer le statut d'une candidature
 async function updateCandidatureStatus(req, res) {
     try {
-        const { candidatureId } = req.params;
+        const { id } = req.params;
         const { statut } = req.body;
         const adminUser = req.user;
 
-        if (!candidatureId || !statut) {
+        if (!id || !statut) {
             return res.status(400).json({ error: 'Paramètres requis manquants' });
         }
 
-        // Mise à jour du statut
-        await pool.execute(
-            'UPDATE candidates SET statut = ? WHERE id = ?',
-            [statut, candidatureId]
-        );
+        await pool.execute('UPDATE candidates SET statut = ? WHERE id = ?', [statut, id]);
 
-        // Récupération des infos de la candidature
         const [rows] = await pool.execute(
             `SELECT c.id, c.userId, c.electionId, e.titre AS electionTitle
-       FROM candidates c
-       JOIN elections e ON c.electionId = e.id
-       WHERE c.id = ?`,
-            [candidatureId]
+             FROM candidates c
+             JOIN elections e ON c.electionId = e.id
+             WHERE c.id = ?`,
+            [id]
         );
 
         if (rows.length === 0) {
@@ -284,7 +279,6 @@ async function updateCandidatureStatus(req, res) {
 
         const { userId, electionId, electionTitle } = rows[0];
 
-        // Log d’activité
         await createActivityLog({
             action: 'Changement de statut de candidature',
             details: `Statut changé en "${statut}" pour l'élection "${electionTitle}"`,
@@ -292,23 +286,22 @@ async function updateCandidatureStatus(req, res) {
             actionType: 'ADMIN'
         });
 
-        // Notification si statut = APPROUVE
         if (statut === 'APPROUVE') {
             await NotificationService.notifyCandidatureApproval({ userId, electionId, electionTitle });
         } else if (statut === 'REJETÉ') {
             await NotificationService.notifyCandidatureRejection({ userId, electionId, electionTitle });
         }
 
-
         res.status(200).json({
             message: `Statut mis à jour vers "${statut}"`,
-            candidatureId
+            candidatureId: id
         });
     } catch (error) {
         console.error('Erreur lors du changement de statut:', error);
         res.status(500).json({ error: 'Erreur serveur' });
     }
 }
+
 
 // Statistiques 
 

@@ -5,7 +5,12 @@ import pool from '../dbconfig.js';
 //Notifications Admin
 async function getAdminNotifications(req, res) {
     try {
-        const { limit = 10 } = req.query;
+        let { limit = 10 } = req.query;
+        limit = parseInt(limit);
+
+        if (isNaN(limit) || limit < 1) {
+            limit = 10;
+        }
 
         const query = `
             SELECT 
@@ -21,9 +26,8 @@ async function getAdminNotifications(req, res) {
             LIMIT ?
         `;
 
-        const [rows] = await pool.execute(query, [parseInt(limit)]);
+        const [rows] = await pool.execute(query, [limit]);
 
-        // Formatage des données
         const notifications = rows.map(log => ({
             action: log.action,
             details: log.details,
@@ -38,6 +42,7 @@ async function getAdminNotifications(req, res) {
         res.status(500).json({ error: 'Erreur serveur' });
     }
 }
+
 
 // Récupérer les notifications d'un utilisateur
 async function getUserNotifications(req, res) {
