@@ -255,13 +255,14 @@ async function deleteCandidature(candidatureId) {
 // Changer le statut d'une candidature
 async function updateCandidatureStatus(req, res) {
     try {
+        const { id } = req.params;
+        const { statut } = req.body;
+        const adminUser = req.user;
+
         if (adminUser.role !== 'ADMIN') {
             return res.status(403).json({ error: 'Accès interdit' });
         }
 
-        const { id } = req.params;
-        const { statut } = req.body;
-        const adminUser = req.user;
 
         if (!id || !statut) {
             return res.status(400).json({ error: 'Paramètres requis manquants' });
