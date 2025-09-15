@@ -292,14 +292,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 
 // Admin gestion
 // Changer le statut d'une candidature
-router.put('/admin/:id/statut', authenticateToken, async (req, res) => {
-    try {
-        const result = await candidatManager.updateCandidatureStatus(req.params.id, req.body.statut);
-        res.json(result);
-    } catch (error) {
-        res.status(500).json({ error: 'Erreur serveur' });
-    }
-});
+router.put('/admin/:id/statut', authenticateToken, candidatManager.updateCandidatureStatus);
 
 // Statistiques
 router.get('/admin/stats', authenticateToken, async (req, res) => {

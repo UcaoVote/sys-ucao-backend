@@ -255,6 +255,10 @@ async function deleteCandidature(candidatureId) {
 // Changer le statut d'une candidature
 async function updateCandidatureStatus(req, res) {
     try {
+        if (adminUser.role !== 'ADMIN') {
+            return res.status(403).json({ error: 'Accès interdit' });
+        }
+
         const { id } = req.params;
         const { statut } = req.body;
         const adminUser = req.user;
@@ -293,9 +297,11 @@ async function updateCandidatureStatus(req, res) {
         }
 
         res.status(200).json({
+            success: true,
             message: `Statut mis à jour vers "${statut}"`,
             candidatureId: id
         });
+
     } catch (error) {
         console.error('Erreur lors du changement de statut:', error);
         res.status(500).json({ error: 'Erreur serveur' });
