@@ -82,18 +82,17 @@ async function getActivityLogs(req, res) {
     }
 }
 
-
-
 // Créer un nouveau log d'activité
-async function createActivityLog(req, res) {
+// Fonction utilitaire : createActivityLog(data)
+async function createActivityLog(data) {
     try {
-        await insertActivityLog(req.body);
-        res.status(201).json({ message: 'Activity log created' });
+        await insertActivityLog(data);
+        console.log(' Journal d’activité créé');
     } catch (error) {
-        console.error('Error creating activity log:', error);
-        res.status(500).json({ error: 'Erreur serveur' });
+        console.error('Erreur lors de la création du journal d’activité:', error);
     }
 }
+
 
 // Fonction utilitaire : insertActivityLog(data)
 async function insertActivityLog({ action, details, userId, actionType = 'INFO' }) {
