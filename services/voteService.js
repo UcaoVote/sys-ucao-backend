@@ -183,42 +183,54 @@ class VoteService {
 
     async calculateVoteWeight(connection, userId, election) {
         try {
-            // Pour les élections d'école, appliquer la pondération 60/40
+            // Normalisation des champs potentiellement undefined
+            const filiereId = election.filiereId ?? null;
+            const annee = election.annee ?? null;
+            const ecoleId = election.ecoleId ?? null;
+
+            console.log('📊 Paramètres pour calcul du poids du vote :', {
+                userId,
+                type: election.type,
+                filiereId,
+                annee,
+                ecoleId
+            });
+
             if (election.type === 'ECOLE') {
                 const [responsableRows] = await connection.execute(`
-                    SELECT rs.* 
-                    FROM responsables_salle rs
-                    INNER JOIN etudiants e ON rs.etudiantId = e.id
-                    WHERE e.userId = ? 
-                    AND rs.ecole = ?
-                `, [userId, election.ecole]);
+                SELECT rs.* 
+                FROM responsables_salle rs
+                INNER JOIN etudiants e ON rs.etudiantId = e.id
+                WHERE e.userId = ? 
+                AND rs.ecole = ?
+            `, [userId, ecoleId]);
 
-                // Les responsables ont un poids de 1.5 (60%) et les étudiants 1.0 (40%)
                 return responsableRows.length > 0 ? 1.5 : 1.0;
             } else {
-                // Pour les autres types d'élection, utiliser le système existant
                 const [responsableRows] = await connection.execute(`
-                    SELECT rs.* 
-                    FROM responsables_salle rs
-                    INNER JOIN etudiants e ON rs.etudiantId = e.id
-                    WHERE e.userId = ? 
-                    AND (? IS NULL OR rs.filiere = ?)
-                    AND (? IS NULL OR rs.annee = ?)
-                    AND (? IS NULL OR rs.ecole = ?)
-                `, [
+                SELECT rs.* 
+                FROM responsables_salle rs
+                INNER JOIN etudiants e ON rs.etudiantId = e.id
+                WHERE e.userId = ? 
+                AND (? IS NULL OR rs.filiere = ?)
+                AND (? IS NULL OR rs.annee = ?)
+                AND (? IS NULL OR rs.ecole = ?)
+            `, [
                     userId,
-                    election.filiere, election.filiere,
-                    election.annee, election.annee,
-                    election.ecole, election.ecole
+                    filiereId, filiereId,
+                    annee, annee,
+                    ecoleId, ecoleId
                 ]);
 
                 return responsableRows.length > 0 ? 1.6 : 1.0;
             }
+
         } catch (error) {
-            console.error('Erreur calcul poids vote:', error);
+            console.error('❌ Erreur calcul poids vote:', error.message);
             return 1.0;
         }
     }
+
 
     async getElectionResults(electionId) {
         let connection;
@@ -324,15 +336,17 @@ class VoteService {
             LEFT JOIN etudiants e ON u.id = e.userId
             LEFT JOIN responsables_salle rs ON e.id = rs.etudiantId
                 AND (? IS NULL OR rs.filiere = ?)
-                AND (? IS NULL OR rs.annee = ?)
-                AND (? IS NULL OR rs.ecole = ?)
+AND (? IS NULL OR rs.annee = ?)
+AND (? IS NULL OR rs.ecole = ?)
+
             WHERE v.electionId = ?
         `, [
-            election.filiere, election.filiere,
+            election.filiereId, election.filiereId,
             election.annee, election.annee,
-            election.ecole, election.ecole,
+            election.ecoleId, election.ecoleId,
             election.id
-        ]);
+        ]
+        );
 
         const [tokenCountRows] = await connection.execute(
             'SELECT COUNT(*) as count FROM vote_tokens WHERE electionId = ?',
@@ -439,15 +453,17 @@ class VoteService {
                 LEFT JOIN etudiants e ON u.id = e.userId
                 LEFT JOIN responsables_salle rs ON e.id = rs.etudiantId
                     AND (? IS NULL OR rs.filiere = ?)
-                    AND (? IS NULL OR rs.annee = ?)
-                    AND (? IS NULL OR rs.ecole = ?)
+AND (? IS NULL OR rs.annee = ?)
+AND (? IS NULL OR rs.ecole = ?)
+
                 WHERE v.electionId = ?
             `, [
-                election.filiere, election.filiere,
+                election.filiereId, election.filiereId,
                 election.annee, election.annee,
-                election.ecole, election.ecole,
+                election.ecoleId, election.ecoleId,
                 parseInt(electionId)
-            ]);
+            ]
+            );
 
             const [tokenCountRows] = await connection.execute(
                 'SELECT COUNT(*) as count FROM vote_tokens WHERE electionId = ?',
@@ -528,15 +544,17 @@ class VoteService {
             LEFT JOIN etudiants e ON u.id = e.userId
             LEFT JOIN responsables_salle rs ON e.id = rs.etudiantId
                 AND (? IS NULL OR rs.filiere = ?)
-                AND (? IS NULL OR rs.annee = ?)
-                AND (? IS NULL OR rs.ecole = ?)
+AND (? IS NULL OR rs.annee = ?)
+AND (? IS NULL OR rs.ecole = ?)
+
             WHERE v.electionId = ?
         `, [
-            election.filiere, election.filiere,
+            election.filiereId, election.filiereId,
             election.annee, election.annee,
-            election.ecole, election.ecole,
+            election.ecoleId, election.ecoleId,
             election.id
-        ]);
+        ]
+        );
 
         const [tokenCountRows] = await connection.execute(
             'SELECT COUNT(*) as count FROM vote_tokens WHERE electionId = ?',
@@ -649,12 +667,13 @@ class VoteService {
     isEligibleForElection(etudiant, election) {
         if (!etudiant || !election) return false;
 
-        const etudiantFiliere = String(etudiant.filiere || '');
+        const etudiantFiliere = String(etudiant.filiereId || '');
         const etudiantAnnee = String(etudiant.annee || '');
-        const etudiantEcole = String(etudiant.ecole || '');
-        const electionFiliere = String(election.filiere || '');
+        const etudiantEcole = String(etudiant.ecoleId || '');
+
+        const electionFiliere = String(election.filiereId || '');
         const electionAnnee = String(election.annee || '');
-        const electionEcole = String(election.ecole || '');
+        const electionEcole = String(election.ecoleId || '');
 
         if (election.type === 'SALLE') {
             return etudiantFiliere === electionFiliere &&
@@ -667,6 +686,7 @@ class VoteService {
         }
         return false;
     }
+
 }
 
 export default new VoteService();
