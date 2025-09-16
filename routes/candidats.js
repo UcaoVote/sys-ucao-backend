@@ -1,6 +1,6 @@
 import express from 'express';
 import candidatManager from '../controllers/candidatManager.js';
-import ActivityManager from '../services/activityManager.js';
+import ActivityManager from '../controllers/activityManager.js';
 import { authenticateToken } from '../middlewares/auth.js';
 import pool from '../dbconfig.js';
 
