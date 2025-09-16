@@ -1,5 +1,6 @@
 import express from 'express';
 import candidatManager from '../controllers/candidatManager.js';
+import { createActivityLog } from '../services/activityService.js';
 import { authenticateToken } from '../middlewares/auth.js';
 import pool from '../dbconfig.js';
 
@@ -270,6 +271,13 @@ router.post('/', authenticateToken, async (req, res) => {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'EN_ATTENTE')`,
             [nom, prenom, slogan, programme, motivation, photoUrl, userId, electionId]
         );
+        await createActivityLog({
+            action: 'Candidature réussie',
+            userId,
+            details: `Soumission à l’élection ${electionId} avec l’ID ${result.insertId}`,
+            actionType: 'SUCCESS',
+            module: 'CANDIDATURE'
+        });
 
         res.json({
             success: true,
