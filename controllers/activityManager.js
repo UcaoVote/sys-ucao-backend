@@ -2,7 +2,6 @@
 
 import pool from '../dbconfig.js';
 
-// Récupérer les logs d'activité
 async function getActivityLogs(req, res) {
     try {
         let { page = 1, limit = 20, actionType, userId, startDate, endDate, module } = req.query;
@@ -11,9 +10,13 @@ async function getActivityLogs(req, res) {
         limit = parseInt(limit);
         const offset = (page - 1) * limit;
 
-        if (isNaN(limit) || isNaN(offset)) {
+        if (isNaN(page) || page <= 0 || isNaN(limit) || limit <= 0) {
             return res.status(400).json({ error: 'Paramètres de pagination invalides' });
         }
+
+        // Sécuriser les limites
+        const finalLimit = Math.min(limit, 100);
+        const finalOffset = Math.max(offset, 0);
 
         let query = `
             SELECT al.*, u.email, u.role 
@@ -21,66 +24,61 @@ async function getActivityLogs(req, res) {
             LEFT JOIN users u ON al.userId = u.id
             WHERE 1=1
         `;
-        let params = [];
+        let countQuery = `
+            SELECT COUNT(*) as total 
+            FROM activity_logs al 
+            WHERE 1=1
+        `;
 
-        let countQuery = 'SELECT COUNT(*) as total FROM activity_logs al WHERE 1=1';
-        let countParams = [];
+        const filters = [];
+        const countFilters = [];
 
         if (module) {
-            query += ' AND al.module = ?';
-            countQuery += ' AND al.module = ?';
-            params.push(module);
-            countParams.push(module);
+            filters.push(`AND al.module = ${pool.escape(module)}`);
+            countFilters.push(`AND al.module = ${pool.escape(module)}`);
         }
 
         if (actionType) {
-            query += ' AND al.actionType = ?';
-            countQuery += ' AND al.actionType = ?';
-            params.push(actionType);
-            countParams.push(actionType);
+            filters.push(`AND al.actionType = ${pool.escape(actionType)}`);
+            countFilters.push(`AND al.actionType = ${pool.escape(actionType)}`);
         }
 
         if (userId) {
-            query += ' AND al.userId = ?';
-            countQuery += ' AND al.userId = ?';
-            params.push(userId);
-            countParams.push(userId);
+            filters.push(`AND al.userId = ${pool.escape(userId)}`);
+            countFilters.push(`AND al.userId = ${pool.escape(userId)}`);
         }
 
         if (startDate) {
-            query += ' AND al.createdAt >= ?';
-            countQuery += ' AND al.createdAt >= ?';
-            params.push(startDate);
-            countParams.push(startDate);
+            filters.push(`AND al.createdAt >= ${pool.escape(startDate)}`);
+            countFilters.push(`AND al.createdAt >= ${pool.escape(startDate)}`);
         }
 
         if (endDate) {
-            query += ' AND al.createdAt <= ?';
-            countQuery += ' AND al.createdAt <= ?';
-            params.push(endDate);
-            countParams.push(endDate);
+            filters.push(`AND al.createdAt <= ${pool.escape(endDate)}`);
+            countFilters.push(`AND al.createdAt <= ${pool.escape(endDate)}`);
         }
 
-        query += ' ORDER BY al.createdAt DESC LIMIT ? OFFSET ?';
-        params.push(limit, offset);
+        query += ' ' + filters.join(' ') + ` ORDER BY al.createdAt DESC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
+        countQuery += ' ' + countFilters.join(' ');
 
-        const [logs] = await pool.execute(query, params);
-        const [countResult] = await pool.execute(countQuery, countParams);
+        const [logs] = await pool.query(query);
+        const [countResult] = await pool.query(countQuery);
 
         res.json({
             logs,
             pagination: {
                 page,
-                limit,
+                limit: finalLimit,
                 total: countResult[0].total,
-                pages: Math.ceil(countResult[0].total / limit)
+                pages: Math.ceil(countResult[0].total / finalLimit)
             }
         });
     } catch (error) {
-        console.error('Error fetching activity logs:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('Erreur récupération logs d’activité:', error);
+        res.status(500).json({ error: 'Erreur interne du serveur' });
     }
 }
+
 
 // Créer un nouveau log d'activité
 // Fonction utilitaire : createActivityLog(data)
