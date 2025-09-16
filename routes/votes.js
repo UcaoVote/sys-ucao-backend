@@ -40,7 +40,7 @@ router.get('/my-votes', authenticateToken, async (req, res) => {
                 c.programme AS candidat_programme
             FROM votes v
             INNER JOIN elections e ON v.electionId = e.id
-            INNER JOIN candidats c ON v.candidateId = c.id
+            INNER JOIN candidates c ON v.candidateId = c.id
             WHERE v.userId = ?
             ORDER BY v.createdAt DESC
         `, [userId]);
@@ -62,6 +62,7 @@ router.get('/my-votes', authenticateToken, async (req, res) => {
     }
 });
 
+
 // GET /api/votes/my-votes/election/:electionId - Vérifier si l'utilisateur a voté à une élection spécifique
 router.get('/my-votes/election/:electionId', authenticateToken, async (req, res) => {
     let connection;
@@ -78,7 +79,7 @@ router.get('/my-votes/election/:electionId', authenticateToken, async (req, res)
                 c.prenom AS candidat_prenom,
                 c.nom AS candidat_nom
             FROM votes v
-            INNER JOIN candidats c ON v.candidateId = c.id
+            INNER JOIN candidates c ON v.candidateId = c.id
             WHERE v.userId = ? AND v.electionId = ?
         `, [userId, electionId]);
 
@@ -98,6 +99,7 @@ router.get('/my-votes/election/:electionId', authenticateToken, async (req, res)
         if (connection) await connection.release();
     }
 });
+
 
 // GET /api/votes/my-votes/stats - Statistiques des votes de l'utilisateur
 router.get('/my-votes/stats', authenticateToken, async (req, res) => {
