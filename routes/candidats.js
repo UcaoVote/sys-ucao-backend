@@ -109,7 +109,7 @@ router.get('/is-candidate/:electionId', authenticateToken, async (req, res) => {
     }
 });
 
-// Mes candidatures
+
 // Récupérer les candidatures de l'utilisateur connecté
 router.get('/my-candidature', authenticateToken, async (req, res) => {
     let connection;
