@@ -212,9 +212,9 @@ class VoteService {
                 FROM responsables_salle rs
                 INNER JOIN etudiants e ON rs.etudiantId = e.id
                 WHERE e.userId = ? 
-                AND (? IS NULL OR rs.filiere = ?)
+                AND (? IS NULL OR rs.filiereId = ?)
                 AND (? IS NULL OR rs.annee = ?)
-                AND (? IS NULL OR rs.ecole = ?)
+                AND (? IS NULL OR rs.ecoleId = ?)
             `, [
                     userId,
                     filiereId, filiereId,
@@ -335,9 +335,9 @@ class VoteService {
             LEFT JOIN users u ON v.userId = u.id
             LEFT JOIN etudiants e ON u.id = e.userId
             LEFT JOIN responsables_salle rs ON e.id = rs.etudiantId
-                AND (? IS NULL OR rs.filiere = ?)
-AND (? IS NULL OR rs.annee = ?)
-AND (? IS NULL OR rs.ecole = ?)
+                AND (? IS NULL OR rs.filiereId = ?)
+                AND (? IS NULL OR rs.annee = ?)
+                AND (? IS NULL OR rs.ecoleId = ?)
 
             WHERE v.electionId = ?
         `, [

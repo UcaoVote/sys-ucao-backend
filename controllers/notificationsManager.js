@@ -26,9 +26,11 @@ async function getAdminNotifications(req, res) {
             LIMIT ?
         `;
 
+        console.log('Notification Query:', query);
+        console.log('Limit value:', limit);
+
         const [rows] = await pool.execute(query, [limit]);
 
-        // Renvoyer directement le tableau
         res.json(rows);
     } catch (error) {
         console.error('Erreur lors de la récupération des notifications admin:', error);

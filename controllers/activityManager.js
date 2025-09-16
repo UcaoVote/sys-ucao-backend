@@ -69,15 +69,22 @@ async function getActivityLogs(req, res) {
             countValues.push(endDate);
         }
 
-        query += ' ' + filters.join(' ') + ` ORDER BY al.createdAt DESC LIMIT ? OFFSET ?`;
+        // Ajouter les clauses WHERE
+        query += ' ' + filters.join(' ');
+        countQuery += ' ' + countFilters.join(' ');
+
+        // Ajouter ORDER BY, LIMIT et OFFSET à la requête principale
+        query += ` ORDER BY al.createdAt DESC LIMIT ? OFFSET ?`;
         values.push(finalLimit, finalOffset);
 
-        countQuery += ' ' + countFilters.join(' ');
+        console.log('Query:', query);
+        console.log('Values:', values);
+        console.log('CountQuery:', countQuery);
+        console.log('CountValues:', countValues);
 
         const [logs] = await pool.execute(query, values);
         const [countResult] = await pool.execute(countQuery, countValues);
 
-        // Renvoyer sous forme de données directement
         res.json({
             logs,
             pagination: {
@@ -92,7 +99,6 @@ async function getActivityLogs(req, res) {
         res.status(500).json({ error: 'Erreur interne du serveur' });
     }
 }
-
 
 // Fonction utilitaire : createActivityLog(data)
 async function createActivityLog(data) {
