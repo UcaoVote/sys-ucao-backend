@@ -1,6 +1,6 @@
 // notificationsController.js
-
 import pool from '../dbconfig.js';
+import NotificationService from '../services/notificationService.js';
 
 //Notifications Admin
 async function getAdminNotifications(req, res) {
@@ -112,24 +112,35 @@ async function markAsRead(req, res) {
     }
 }
 
-// Créer une nouvelle notification
 async function createNotification(req, res) {
     try {
-        const { title, message, type, priority, relatedEntity, entityId, userId } = req.body;
+        const {
+            title,
+            message,
+            type,
+            priority,
+            relatedEntity,
+            entityId,
+            userId
+        } = req.body;
 
-        const id = require('crypto').randomUUID();
+        const id = await NotificationService.sendUserNotification({
+            title,
+            message,
+            type,
+            priority,
+            relatedEntity,
+            entityId,
+            userId
+        });
 
-        await pool.execute(
-            'INSERT INTO notifications (id, title, message, type, priority, relatedEntity, entityId, userId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [id, title, message, type, priority, relatedEntity, entityId, userId]
-        );
-
-        res.status(201).json({ message: 'Notification created', id });
+        res.status(201).json({ message: 'Notification créée', id });
     } catch (error) {
-        console.error('Error creating notification:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('Erreur création notification:', error);
+        res.status(500).json({ error: 'Erreur interne du serveur' });
     }
 }
+
 
 export default {
     getUserNotifications,

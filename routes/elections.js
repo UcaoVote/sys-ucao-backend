@@ -30,7 +30,6 @@ router.get('/voting', authenticateToken, async (req, res) => {
 
 
 // Recuperer  toues les elections
-
 router.get('/', authenticateToken, async (req, res) => {
     try {
         const elections = await electionManager.getAllElections();

@@ -167,6 +167,15 @@ async function updateElection(id, electionData) {
         ];
 
         const [result] = await pool.execute(query, values);
+
+        await createActivityLog({
+            action: 'Élection modifiée',
+            userId,
+            details: `Élection ${id} mise à jour avec succès`,
+            actionType: 'SUCCESS',
+            module: 'ADMIN'
+        });
+
         return result.affectedRows;
     } catch (error) {
         console.error('Erreur lors de la modification :', error);
@@ -194,6 +203,15 @@ async function deleteElection(id) {
         // Supprimer l'élection
         const deleteQuery = `DELETE FROM elections WHERE id = ?`;
         const [result] = await pool.execute(deleteQuery, [id]);
+
+        await createActivityLog({
+            action: 'Élection supprimée',
+            userId,
+            details: `Élection ${id} supprimée avec succès`,
+            actionType: 'SUCCESS',
+            module: 'ADMIN'
+        });
+
         return result.affectedRows;
 
     } catch (error) {

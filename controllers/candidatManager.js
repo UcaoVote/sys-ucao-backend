@@ -194,7 +194,6 @@ async function addCandidature(data) {
         connection.release();
     }
 }
-
 // Modifier une candidature
 async function updateCandidature(candidatureId, updates) {
     try {
@@ -218,8 +217,6 @@ async function updateCandidature(candidatureId, updates) {
         throw error;
     }
 }
-
-
 // Supprimer une candidature
 async function deleteCandidature(candidatureId) {
     try {
