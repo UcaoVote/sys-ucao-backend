@@ -33,41 +33,45 @@ class VoteController {
     async submitVote(req, res) {
         try {
             const { electionId, candidateId, voteToken } = req.body;
+            const userId = req.user?.id;
 
-            if (!electionId || !candidateId || !voteToken) {
+            // Validation des paramètres
+            if (!electionId || !candidateId || !voteToken || !userId) {
                 return res.status(400).json({
                     success: false,
-                    message: 'ElectionId, CandidateId et VoteToken requis'
+                    message: 'ElectionId, CandidateId, VoteToken et utilisateur requis'
                 });
             }
 
-            await voteService.submitVote({ electionId, candidateId, voteToken }, req.user.id);
+            // Enregistrement du vote
+            await voteService.submitVote({ electionId, candidateId, voteToken }, userId);
 
-            res.json({
+            return res.status(200).json({
                 success: true,
                 message: 'Vote enregistré avec succès'
             });
+
         } catch (error) {
             console.error('Erreur enregistrement vote:', error);
 
-            if (error.message.includes('invalide') ||
-                error.message.includes('non autorisé') ||
-                error.message.includes('déjà voté') ||
-                error.message.includes('non active') ||
-                error.message.includes('Candidat invalide')) {
-                return res.status(400).json({
-                    success: false,
-                    message: error.message
-                });
-            }
+            const clientErrors = [
+                'invalide',
+                'non autorisé',
+                'déjà voté',
+                'non active',
+                'Candidat invalide'
+            ];
 
-            res.status(500).json({
+            const isClientError = clientErrors.some(msg => error.message.includes(msg));
+
+            return res.status(isClientError ? 400 : 500).json({
                 success: false,
-                message: 'Erreur serveur',
-                error: process.env.NODE_ENV === 'development' ? error.message : undefined
+                message: error.message,
+                error: process.env.NODE_ENV === 'development' && !isClientError ? error.message : undefined
             });
         }
     }
+
 
     async getResults(req, res) {
         try {
