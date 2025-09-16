@@ -93,7 +93,7 @@ async function getActivityLogs(req, res) {
     }
 }
 
-// Créer un nouveau log d'activité
+
 // Fonction utilitaire : createActivityLog(data)
 async function createActivityLog(data) {
     try {
@@ -103,7 +103,6 @@ async function createActivityLog(data) {
         console.error('Erreur lors de la création du journal d’activité:', error);
     }
 }
-
 
 // Fonction utilitaire : insertActivityLog(data)
 async function insertActivityLog({ action, details, userId, actionType = 'INFO' }) {
@@ -133,7 +132,6 @@ async function insertActivityLog({ action, details, userId, actionType = 'INFO' 
     }
 }
 
-
 // Statistiques des activités
 async function getActivityStats(req, res) {
     try {
@@ -156,7 +154,6 @@ async function getActivityStats(req, res) {
         res.status(500).json({ error: 'Internal server error' });
     }
 }
-
 
 async function getRecentActivitiesByStudent(req, res) {
     try {
