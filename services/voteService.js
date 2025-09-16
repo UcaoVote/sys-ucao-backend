@@ -40,21 +40,44 @@ class VoteService {
                 throw new Error('Vous n\'êtes pas éligible pour cette élection');
             }
 
-            // Vérifier s’il existe déjà un jeton valide
-            const [tokenRows] = await connection.execute(`
+            // Vérifier s’il existe déjà un jeton (même expiré ou utilisé)
+            const [existingRows] = await connection.execute(`
             SELECT * FROM vote_tokens 
-            WHERE userId = ? AND electionId = ? AND isUsed = FALSE AND expiresAt > NOW()
+            WHERE userId = ? AND electionId = ?
             ORDER BY createdAt DESC
             LIMIT 1
         `, [userId, electionIdInt]);
 
             let voteToken;
 
-            if (tokenRows.length > 0) {
-                voteToken = tokenRows[0];
-                console.log(`🔁 Jeton existant trouvé: ${voteToken.token}`);
+            if (existingRows.length > 0) {
+                const existing = existingRows[0];
+
+                // Si le jeton est encore valide et non utilisé, le réutiliser
+                if (!existing.isUsed && new Date(existing.expiresAt) > new Date()) {
+                    console.log(`🔁 Jeton valide existant trouvé: ${existing.token}`);
+                    voteToken = existing;
+                } else {
+                    console.log(`⚠️ Jeton existant expiré ou utilisé, mise à jour...`);
+
+                    // Mettre à jour le jeton existant
+                    const newToken = crypto.randomUUID();
+                    await connection.execute(`
+                    UPDATE vote_tokens
+                    SET token = ?, isUsed = FALSE, expiresAt = DATE_ADD(NOW(), INTERVAL 1 HOUR), createdAt = NOW()
+                    WHERE id = ?
+                `, [newToken, existing.id]);
+
+                    const [updatedRows] = await connection.execute(
+                        'SELECT * FROM vote_tokens WHERE id = ?',
+                        [existing.id]
+                    );
+
+                    voteToken = updatedRows[0];
+                    console.log(`✅ Jeton régénéré: ${voteToken.token}`);
+                }
             } else {
-                console.log(`🆕 Aucun jeton valide trouvé, insertion d’un nouveau...`);
+                console.log(`🆕 Aucun jeton trouvé, insertion d’un nouveau...`);
 
                 const [insertResult] = await connection.execute(`
                 INSERT INTO vote_tokens (userId, electionId, token, isUsed, expiresAt, createdAt)
