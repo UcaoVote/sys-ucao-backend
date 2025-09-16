@@ -1,5 +1,5 @@
 import voteService from '../services/voteService.js';
-import { createActivityLog } from '../services/activityService.js';
+import ActivityManager from '../controllers/activityManager.js';
 
 class VoteController {
     async getVoteToken(req, res) {
@@ -48,7 +48,7 @@ class VoteController {
             await voteService.submitVote({ electionId, candidateId, voteToken }, userId);
 
             // Journal d’activité
-            await createActivityLog({
+            await ActivityManager.createActivityLog({
                 action: 'Vote enregistré',
                 userId,
                 details: `Vote pour le candidat ${candidateId} dans l’élection ${electionId}`,
@@ -73,26 +73,6 @@ class VoteController {
             ];
 
             const isClientError = clientErrors.some(msg => error.message.includes(msg));
-
-            // Journal d’erreur côté client
-            if (isClientError) {
-                await createActivityLog({
-                    action: 'Échec du vote',
-                    userId: req.user?.id || null,
-                    details: `Erreur côté client : ${error.message}`,
-                    actionType: 'WARNING',
-                    module: 'ELECTION'
-                });
-            } else {
-                // Journal d’erreur serveur
-                await createActivityLog({
-                    action: 'Erreur serveur lors du vote',
-                    userId: req.user?.id || null,
-                    details: error.stack || error.message,
-                    actionType: 'ERROR',
-                    module: 'ELECTION'
-                });
-            }
 
             return res.status(isClientError ? 400 : 500).json({
                 success: false,
