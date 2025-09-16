@@ -6,7 +6,7 @@ import NotificationService from '../services/notificationService.js';
 async function getAdminNotifications(req, res) {
     try {
         let { limit = 10 } = req.query;
-        limit = parseInt(limit);
+        limit = parseInt(limit, 10);
 
         if (isNaN(limit) || limit < 1) {
             limit = 10;
@@ -26,6 +26,8 @@ async function getAdminNotifications(req, res) {
             LIMIT ?
         `;
 
+        console.log('Exécution SQL avec LIMIT =', limit);
+
         const [rows] = await pool.execute(query, [limit]);
 
         const notifications = rows.map(log => ({
@@ -36,12 +38,13 @@ async function getAdminNotifications(req, res) {
             userEmail: log.email
         }));
 
-        res.json({ notifications });
+        res.json({ data: notifications }); // frontend attend "data"
     } catch (error) {
         console.error('Erreur lors de la récupération des notifications admin:', error);
         res.status(500).json({ error: 'Erreur serveur' });
     }
 }
+
 
 
 // Récupérer les notifications d'un utilisateur
