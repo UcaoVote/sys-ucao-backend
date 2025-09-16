@@ -5,10 +5,14 @@ class VoteService {
         let connection;
         try {
             connection = await pool.getConnection();
+            const electionIdInt = parseInt(electionId);
 
+            console.log(`🔍 Vérification de l’éligibilité pour userId=${userId}, electionId=${electionIdInt}`);
+
+            // Vérifier si l’élection est active
             const [electionRows] = await connection.execute(
                 'SELECT * FROM elections WHERE id = ?',
-                [parseInt(electionId)]
+                [electionIdInt]
             );
 
             if (electionRows.length === 0 || !electionRows[0].isActive) {
@@ -17,12 +21,13 @@ class VoteService {
 
             const election = electionRows[0];
 
+            // Vérifier le profil étudiant
             const [userRows] = await connection.execute(`
-                SELECT u.*, e.* 
-                FROM users u
-                LEFT JOIN etudiants e ON u.id = e.userId
-                WHERE u.id = ?
-            `, [userId]);
+            SELECT u.*, e.* 
+            FROM users u
+            LEFT JOIN etudiants e ON u.id = e.userId
+            WHERE u.id = ?
+        `, [userId]);
 
             if (userRows.length === 0 || !userRows[0].id) {
                 throw new Error('Accès refusé - profil étudiant incomplet');
@@ -30,29 +35,39 @@ class VoteService {
 
             const etudiant = userRows[0];
 
+            // Vérifier l’éligibilité
             if (!this.isEligibleForElection(etudiant, election)) {
                 throw new Error('Vous n\'êtes pas éligible pour cette élection');
             }
 
+            // Vérifier s’il existe déjà un jeton valide
             const [tokenRows] = await connection.execute(`
-                SELECT * FROM vote_tokens 
-                WHERE userId = ? AND electionId = ? AND isUsed = FALSE AND expiresAt > NOW()
-            `, [userId, parseInt(electionId)]);
+            SELECT * FROM vote_tokens 
+            WHERE userId = ? AND electionId = ? AND isUsed = FALSE AND expiresAt > NOW()
+            ORDER BY createdAt DESC
+            LIMIT 1
+        `, [userId, electionIdInt]);
 
             let voteToken;
+
             if (tokenRows.length > 0) {
                 voteToken = tokenRows[0];
+                console.log(`🔁 Jeton existant trouvé: ${voteToken.token}`);
             } else {
-                const [result] = await connection.execute(`
-                    INSERT INTO vote_tokens (userId, electionId, token, isUsed, expiresAt, createdAt)
-                    VALUES (?, ?, UUID(), FALSE, DATE_ADD(NOW(), INTERVAL 1 HOUR), NOW())
-                `, [userId, parseInt(electionId)]);
+                console.log(`🆕 Aucun jeton valide trouvé, insertion d’un nouveau...`);
+
+                const [insertResult] = await connection.execute(`
+                INSERT INTO vote_tokens (userId, electionId, token, isUsed, expiresAt, createdAt)
+                VALUES (?, ?, UUID(), FALSE, DATE_ADD(NOW(), INTERVAL 1 HOUR), NOW())
+            `, [userId, electionIdInt]);
 
                 const [newTokenRows] = await connection.execute(
                     'SELECT * FROM vote_tokens WHERE id = ?',
-                    [result.insertId]
+                    [insertResult.insertId]
                 );
+
                 voteToken = newTokenRows[0];
+                console.log(`✅ Nouveau jeton généré: ${voteToken.token}`);
             }
 
             return {
@@ -64,10 +79,15 @@ class VoteService {
                     type: election.type
                 }
             };
+
+        } catch (error) {
+            console.error('❌ Erreur dans getVoteToken:', error.message);
+            throw error;
         } finally {
             if (connection) await connection.release();
         }
     }
+
 
     async submitVote(voteData, userId) {
         let connection;
