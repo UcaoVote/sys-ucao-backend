@@ -77,6 +77,7 @@ async function getActivityLogs(req, res) {
         const [logs] = await pool.execute(query, values);
         const [countResult] = await pool.execute(countQuery, countValues);
 
+        // Renvoyer sous forme de données directement
         res.json({
             logs,
             pagination: {
@@ -87,12 +88,10 @@ async function getActivityLogs(req, res) {
             }
         });
     } catch (error) {
-        console.error('Erreur récupération logs d’activité:', error);
+        console.error('Erreur récupération logs d\'activité:', error);
         res.status(500).json({ error: 'Erreur interne du serveur' });
     }
 }
-
-
 
 // Créer un nouveau log d'activité
 // Fonction utilitaire : createActivityLog(data)

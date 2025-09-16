@@ -2,7 +2,7 @@
 import pool from '../dbconfig.js';
 import NotificationService from '../services/notificationService.js';
 
-//Notifications Admin
+// Notifications Admin 
 async function getAdminNotifications(req, res) {
     try {
         let { limit = 10 } = req.query;
@@ -26,28 +26,17 @@ async function getAdminNotifications(req, res) {
             LIMIT ?
         `;
 
-        console.log('Exécution SQL avec LIMIT =', limit);
-
         const [rows] = await pool.execute(query, [limit]);
 
-        const notifications = rows.map(log => ({
-            action: log.action,
-            details: log.details,
-            createdAt: log.createdAt,
-            actionType: log.actionType,
-            userEmail: log.email
-        }));
-
-        res.json({ data: notifications }); // frontend attend "data"
+        // Renvoyer directement le tableau
+        res.json(rows);
     } catch (error) {
         console.error('Erreur lors de la récupération des notifications admin:', error);
         res.status(500).json({ error: 'Erreur serveur' });
     }
 }
 
-
-
-// Récupérer les notifications d'un utilisateur
+// Corriger les autres méthodes pour utiliser les bons noms de colonnes
 async function getUserNotifications(req, res) {
     try {
         const userId = req.user.id;

@@ -2,6 +2,7 @@ import pool from '../dbconfig.js';
 import { randomUUID } from 'crypto';
 
 class NotificationService {
+    // La méthode validate doit correspondre à votre schéma
     static validate(data) {
         const required = ['title', 'message', 'type', 'priority', 'userId'];
         for (const field of required) {
@@ -11,6 +12,7 @@ class NotificationService {
         }
     }
 
+    // Modifiez la requête SQL pour utiliser les bons noms de colonnes
     static async sendUserNotification(notificationData) {
         try {
             this.validate(notificationData);
@@ -24,8 +26,8 @@ class NotificationService {
 
             await pool.execute(
                 `INSERT INTO notifications 
-                 (id, title, message, type, priority, is_read, relatedEntity, entityId, userId, createdAt, updatedAt)
-                 VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, NOW(), NOW())`,
+             (id, title, message, type, priority, is_read, relatedEntity, entityId, userId, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, NOW(), NOW())`,
                 [id, title, message, type, priority, relatedEntity, entityId, userId]
             );
 
