@@ -14,7 +14,6 @@ async function getActivityLogs(req, res) {
             return res.status(400).json({ error: 'Paramètres de pagination invalides' });
         }
 
-        // Sécuriser les limites
         const finalLimit = Math.min(limit, 100);
         const finalOffset = Math.max(offset, 0);
 
@@ -32,37 +31,51 @@ async function getActivityLogs(req, res) {
 
         const filters = [];
         const countFilters = [];
+        const values = [];
+        const countValues = [];
 
         if (module) {
-            filters.push(`AND al.module = ${pool.escape(module)}`);
-            countFilters.push(`AND al.module = ${pool.escape(module)}`);
+            filters.push(`AND al.module = ?`);
+            countFilters.push(`AND al.module = ?`);
+            values.push(module);
+            countValues.push(module);
         }
 
         if (actionType) {
-            filters.push(`AND al.actionType = ${pool.escape(actionType)}`);
-            countFilters.push(`AND al.actionType = ${pool.escape(actionType)}`);
+            filters.push(`AND al.actionType = ?`);
+            countFilters.push(`AND al.actionType = ?`);
+            values.push(actionType);
+            countValues.push(actionType);
         }
 
         if (userId) {
-            filters.push(`AND al.userId = ${pool.escape(userId)}`);
-            countFilters.push(`AND al.userId = ${pool.escape(userId)}`);
+            filters.push(`AND al.userId = ?`);
+            countFilters.push(`AND al.userId = ?`);
+            values.push(userId);
+            countValues.push(userId);
         }
 
         if (startDate) {
-            filters.push(`AND al.createdAt >= ${pool.escape(startDate)}`);
-            countFilters.push(`AND al.createdAt >= ${pool.escape(startDate)}`);
+            filters.push(`AND al.createdAt >= ?`);
+            countFilters.push(`AND al.createdAt >= ?`);
+            values.push(startDate);
+            countValues.push(startDate);
         }
 
         if (endDate) {
-            filters.push(`AND al.createdAt <= ${pool.escape(endDate)}`);
-            countFilters.push(`AND al.createdAt <= ${pool.escape(endDate)}`);
+            filters.push(`AND al.createdAt <= ?`);
+            countFilters.push(`AND al.createdAt <= ?`);
+            values.push(endDate);
+            countValues.push(endDate);
         }
 
-        query += ' ' + filters.join(' ') + ` ORDER BY al.createdAt DESC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
+        query += ' ' + filters.join(' ') + ` ORDER BY al.createdAt DESC LIMIT ? OFFSET ?`;
+        values.push(finalLimit, finalOffset);
+
         countQuery += ' ' + countFilters.join(' ');
 
-        const [logs] = await pool.query(query);
-        const [countResult] = await pool.query(countQuery);
+        const [logs] = await pool.execute(query, values);
+        const [countResult] = await pool.execute(countQuery, countValues);
 
         res.json({
             logs,
@@ -78,6 +91,7 @@ async function getActivityLogs(req, res) {
         res.status(500).json({ error: 'Erreur interne du serveur' });
     }
 }
+
 
 
 // Créer un nouveau log d'activité
