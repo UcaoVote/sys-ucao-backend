@@ -167,10 +167,9 @@ async function getRecentActivitiesByStudent(req, res) {
   LEFT JOIN users u ON al.userId = u.id
   WHERE al.userId = ?
   ORDER BY al.createdAt DESC
-  LIMIT ?
 `;
 
-        const [logs] = await pool.execute(query, [userId, parsedLimit]);
+        const [logs] = await pool.execute(query, [userId]);
 
         res.status(200).json({ logs });
     } catch (error) {
