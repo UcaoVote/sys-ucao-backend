@@ -147,36 +147,61 @@ async function getActivityStats(req, res) {
 }
 
 
-// Récupérer les logs d'activités etudiant
 async function getRecentActivitiesByStudent(req, res) {
     try {
-        const { userId, limit = 10 } = req.query;
+        const { userId, page = 1, limit = 10 } = req.query;
 
+        // Validation des paramètres
         if (!userId || typeof userId !== 'string') {
             return res.status(400).json({ error: 'Paramètre userId invalide' });
         }
 
+        const parsedPage = parseInt(page);
         const parsedLimit = parseInt(limit);
-        if (isNaN(parsedLimit) || parsedLimit <= 0) {
-            return res.status(400).json({ error: 'Paramètre limit invalide' });
-        }
-        console.log("Requête SQL avec :", { userId, parsedLimit });
-        const query = `
-  SELECT al.*, u.email, u.role
-  FROM activity_logs al
-  LEFT JOIN users u ON al.userId = u.id
-  WHERE al.userId = ?
-  ORDER BY al.createdAt DESC
-`;
 
+        if (isNaN(parsedPage) || parsedPage <= 0 || isNaN(parsedLimit) || parsedLimit <= 0) {
+            return res.status(400).json({ error: 'Paramètres page ou limit invalides' });
+        }
+
+        const finalLimit = Math.min(parsedLimit, 100); // max 100 logs par page
+        const offset = (parsedPage - 1) * finalLimit;
+
+        console.log("Requête SQL avec :", { userId, finalLimit, offset });
+
+        // Requête principale
+        const query = `
+            SELECT al.*, u.email, u.role
+            FROM activity_logs al
+            LEFT JOIN users u ON al.userId = u.id
+            WHERE al.userId = ?
+            ORDER BY al.createdAt DESC
+            LIMIT ${finalLimit} OFFSET ${offset}
+        `;
         const [logs] = await pool.execute(query, [userId]);
 
-        res.status(200).json({ logs });
+        // Requête pour le total
+        const [countRows] = await pool.execute(`
+            SELECT COUNT(*) AS total FROM activity_logs WHERE userId = ?
+        `, [userId]);
+
+        const total = countRows[0]?.total || 0;
+        const totalPages = Math.ceil(total / finalLimit);
+
+        res.status(200).json({
+            logs,
+            pagination: {
+                currentPage: parsedPage,
+                totalPages,
+                totalItems: total,
+                pageSize: finalLimit
+            }
+        });
     } catch (error) {
         console.error('Erreur lors de la récupération des activités récentes :', error);
         res.status(500).json({ error: 'Erreur interne du serveur' });
     }
 }
+
 
 
 export default {
