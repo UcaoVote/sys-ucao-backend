@@ -104,7 +104,6 @@ export class PasswordResetService {
                 };
 
             } catch (error) {
-                // Rollback en cas d'erreur
                 await connection.rollback();
                 throw error;
             }
