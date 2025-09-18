@@ -10,7 +10,7 @@ router.get('/me', authenticateToken, adminController.getAdminProfile);
 router.put('/update', authenticateToken, adminController.updateAdminProfile);
 
 // POST /api/admin/students/:studentId/reset-access
-router.post('/students/:studentId/reset-access', authenticateAdmin, async (req, res) => {
+router.post('/students/:studentId/reset-access', authenticateToken, async (req, res) => {
     try {
         const adminId = req.user.id;
         const studentId = req.params.studentId;
