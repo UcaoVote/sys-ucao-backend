@@ -29,7 +29,7 @@ async function getAdminNotifications(req, res) {
         console.log('Notification Query:', query);
         console.log('Limit value:', limit);
 
-        const [rows] = await pool.execute(query, [limit]);
+        const [rows] = await pool.execute(query, [parseInt(limit)]);
 
         res.json(rows);
     } catch (error) {

@@ -75,7 +75,7 @@ async function getActivityLogs(req, res) {
 
         // Ajouter ORDER BY, LIMIT et OFFSET à la requête principale
         query += ` ORDER BY al.createdAt DESC LIMIT ? OFFSET ?`;
-        values.push(finalLimit, finalOffset);
+        values.push(parseInt(finalLimit), parseInt(finalOffset));
 
         console.log('Query:', query);
         console.log('Values:', values);
