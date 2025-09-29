@@ -13,18 +13,17 @@ async function getAdminNotifications(req, res) {
         }
 
         const query = `
-            SELECT 
-                al.action,
-                al.details,
-                al.createdAt,
-                al.actionType,
-                u.email
-            FROM activity_logs al
-            LEFT JOIN users u ON al.userId = u.id
-            WHERE al.actionType = 'ADMIN'
-            ORDER BY al.createdAt DESC
-            LIMIT ?
-        `;
+    SELECT 
+        al.action,
+        al.details,
+        al.createdAt,
+        al.actionType,
+        u.email
+    FROM activity_logs al
+    LEFT JOIN users u ON al.userId = u.id
+    WHERE al.actionType = 'ADMIN'
+    ORDER BY al.createdAt DESC
+    LIMIT ${Math.max(0, parseInt(limit))}`;
 
         console.log('Notification Query:', query);
         console.log('Limit value:', limit);
