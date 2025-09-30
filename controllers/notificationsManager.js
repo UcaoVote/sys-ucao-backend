@@ -44,23 +44,22 @@ async function getUserNotifications(req, res) {
 
         if (!userId) {
             return res.status(400).json({
-                error: 'ID utilisateur manquant'
+                success: false,
+                error: 'User ID is required'
             });
         }
 
-        let { page = 1, limit = 10, unreadOnly = false } = req.query;
+        // Get and validate query parameters
+        let { limit = 10, unreadOnly = false } = req.query;
 
-        // Conversion et validation des paramètres
-        limit = parseInt(limit);
-        page = parseInt(page);
+        // Convert and validate parameters
+        limit = parseInt(limit, 10);
+        if (isNaN(limit) || limit < 1) {
+            limit = 10;
+        }
 
-        if (isNaN(limit) || limit < 1) limit = 10;
-        if (isNaN(page) || page < 1) page = 1;
-
-        const offset = (page - 1) * limit;
-
-        // Construction de la requête de base
-        let query = `
+        // Build main query
+        const query = `
             SELECT 
                 id, 
                 title, 
@@ -73,78 +72,29 @@ async function getUserNotifications(req, res) {
                 createdAt, 
                 updatedAt
             FROM notifications 
-            WHERE userId = ?
+            WHERE userId = ? ${unreadOnly === 'true' ? 'AND is_read = FALSE' : ''}
+            ORDER BY createdAt DESC 
+            LIMIT ${Math.max(0, parseInt(limit))}
         `;
 
-        // Initialisation des paramètres
-        let params = [userId];
+        console.log('User Notification Query:', query);
+        console.log('Limit value:', limit);
 
-        // Ajout du filtre unread si nécessaire
-        if (unreadOnly === 'true') {
-            query += ' AND is_read = FALSE';
-        }
+        const [notifications] = await pool.execute(query, [userId]);
 
-        // Ajout de l'ordre et de la pagination
-        query += ' ORDER BY createdAt DESC LIMIT ? OFFSET ?';
-        params.push(limit);
-        params.push(offset);
-
-        console.log('Executing query:', { query, params });
-
-        const [notifications] = await pool.execute(query, params);
-
-        // Compter le total pour la pagination
-        let countQuery = 'SELECT COUNT(*) as total FROM notifications WHERE userId = ?';
-        const countParams = [userId];
-
-        if (unreadOnly === 'true') {
-            countQuery += ' AND is_read = FALSE';
-        }
-
-        console.log('Executing count query:', { countQuery, countParams });
-
-        const [countResult] = await pool.execute(countQuery, countParams);
-
-        // Envoi de la réponse
-        res.json({
+        // Send response
+        return res.json({
             success: true,
-            notifications,
-            pagination: {
-                page: page,
-                limit: limit,
-                total: countResult[0].total,
-                pages: Math.ceil(countResult[0].total / limit)
-            }
+            notifications
         });
+
     } catch (error) {
-        console.error('Erreur getUserNotifications:', error);
-        res.status(500).json({
+        console.error('Error in getUserNotifications:', error);
+        return res.status(500).json({
             success: false,
-            error: 'Erreur lors de la récupération des notifications'
+            error: 'Failed to fetch notifications'
         });
-    } const [notifications] = await pool.execute(query, params);
-
-    // Compter le total pour la pagination
-    let countQuery = 'SELECT COUNT(*) as total FROM notifications WHERE userId = ?';
-    if (unreadOnly === 'true') {
-        countQuery += ' AND is_read = FALSE';
     }
-
-    const [countResult] = await pool.execute(countQuery, [userId]);
-
-    res.json({
-        notifications,
-        pagination: {
-            page: parseInt(page),
-            limit: parseInt(limit),
-            total: countResult[0].total,
-            pages: Math.ceil(countResult[0].total / limit)
-        }
-    });
-} catch (error) {
-    console.error('Error fetching notifications:', error);
-    res.status(500).json({ error: 'Internal server error' });
-}
 }
 
 // Marquer une notification comme lue
