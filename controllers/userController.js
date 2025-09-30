@@ -126,6 +126,7 @@ class UserController {
         }
     }
 
+    // Dans handleFirstYearRegistration - CORRIGÉ
     async handleFirstYearRegistration(studentData) {
         const connection = await pool.getConnection();
         try {
@@ -140,15 +141,15 @@ class UserController {
             // Créer l'utilisateur
             const userId = await userService.createUser(studentData);
 
-            // Créer l'étudiant avec les nouvelles données
-            const tempId = await userService.createFirstYearStudent(studentData, userId);
+            // Créer l'étudiant et récupérer l'ID réel
+            const { tempId, studentId } = await userService.createFirstYearStudent(studentData, userId);
 
             // Marquer le code comme utilisé
             await userService.markCodeAsUsed(studentData.codeInscription, userId);
 
-            // Insérer les activités sélectionnées
+            // Insérer les activités sélectionnées avec l'ID réel de l'étudiant
             if (studentData.activities && studentData.activities.length > 0) {
-                await this.insertStudentActivities(tempId, studentData.activities, connection);
+                await this.insertStudentActivities(studentId, studentData.activities, connection);
             }
 
             await connection.commit();
@@ -260,15 +261,26 @@ class UserController {
                 throw new Error("Certaines activités sélectionnées sont invalides.");
             }
 
-            // Insérer les activités
-            const activityValues = activities.map(activityId => [studentId, activityId]);
+            // Récupérer l'ID réel de l'étudiant à partir de l'identifiant temporaire
+            const [studentRows] = await connection.execute(
+                'SELECT id FROM etudiants WHERE identifiantTemporaire = ?',
+                [studentId]
+            );
+
+            if (studentRows.length === 0) {
+                throw new Error("Étudiant non trouvé.");
+            }
+
+            const realStudentId = studentRows[0].id;
+
+            // Insérer les activités avec le vrai ID étudiant
+            const activityValues = activities.map(activityId => [realStudentId, activityId]);
             await connection.query(
                 'INSERT INTO student_activities (student_id, activity_id) VALUES ?',
                 [activityValues]
             );
         }
     }
-
 }
 
 export default new UserController();
