@@ -1,13 +1,13 @@
 import userService from '../services/userService.js';
 import pool from '../dbconfig.js';
 class UserController {
-
     async register(req, res) {
         try {
             const {
                 email, password, confirmPassword,
                 nom, prenom, filiereId, ecoleId,
-                annee, codeInscription, matricule
+                annee, codeInscription, matricule,
+                activities, whatsapp, additionalInfo
             } = req.body;
 
             // Validation des champs obligatoires
@@ -56,6 +56,14 @@ class UserController {
                 });
             }
 
+            // Validation optionnelle du WhatsApp
+            if (whatsapp && !userService.validatePhone(whatsapp)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Format du numéro WhatsApp invalide.'
+                });
+            }
+
             // Vérifier si l'email existe déjà
             const emailExists = await userService.checkEmailExists(email);
             if (emailExists) {
@@ -65,7 +73,7 @@ class UserController {
                 });
             }
 
-            // Vérifier que la filière appartient bien à l’école
+            // Vérifier que la filière appartient bien à l'école
             const filiereValide = await userService.checkFiliereInEcole(filiereId, ecoleId);
             if (!filiereValide) {
                 return res.status(400).json({
@@ -88,7 +96,7 @@ class UserController {
                 result = await this.handleFirstYearRegistration({
                     email, password, nom, prenom,
                     filiereId, ecoleId, annee: anneeInt,
-                    codeInscription
+                    codeInscription, whatsapp, additionalInfo, activities
                 });
             }
             // 2e/3e année : matricule
@@ -103,7 +111,7 @@ class UserController {
                 result = await this.handleUpperYearRegistration({
                     email, password, nom, prenom,
                     filiereId, ecoleId, annee: anneeInt,
-                    matricule
+                    matricule, whatsapp, additionalInfo, activities
                 });
             }
 
@@ -117,7 +125,6 @@ class UserController {
             });
         }
     }
-
 
     async handleFirstYearRegistration(studentData) {
         const connection = await pool.getConnection();
@@ -133,11 +140,16 @@ class UserController {
             // Créer l'utilisateur
             const userId = await userService.createUser(studentData);
 
-            // Créer l'étudiant
+            // Créer l'étudiant avec les nouvelles données
             const tempId = await userService.createFirstYearStudent(studentData, userId);
 
             // Marquer le code comme utilisé
             await userService.markCodeAsUsed(studentData.codeInscription, userId);
+
+            // Insérer les activités sélectionnées
+            if (studentData.activities && studentData.activities.length > 0) {
+                await this.insertStudentActivities(tempId, studentData.activities, connection);
+            }
 
             await connection.commit();
 
@@ -156,7 +168,10 @@ class UserController {
                         identifiantTemporaire: tempId,
                         annee: studentData.annee,
                         ecole: ecoleRows[0]?.nom || null,
-                        filiere: filiereRows[0]?.nom || null
+                        filiere: filiereRows[0]?.nom || null,
+                        whatsapp: studentData.whatsapp || null,
+                        additionalInfo: studentData.additionalInfo || null,
+                        activities: studentData.activities || []
                     }
                 }
             };
@@ -182,12 +197,22 @@ class UserController {
             // Créer l'utilisateur
             const userId = await userService.createUser(studentData);
 
-            // Mettre à jour l'étudiant existant
+            // Mettre à jour l'étudiant existant avec les nouvelles données
             const tempId = await userService.updateStudent(
-                { ...studentData, tempId: matriculeValidation.tempId },
+                {
+                    ...studentData,
+                    tempId: matriculeValidation.tempId,
+                    whatsapp: studentData.whatsapp,
+                    additionalInfo: studentData.additionalInfo
+                },
                 matriculeValidation.studentId,
                 userId
             );
+
+            // Insérer les activités sélectionnées
+            if (studentData.activities && studentData.activities.length > 0) {
+                await this.insertStudentActivities(matriculeValidation.studentId, studentData.activities, connection);
+            }
 
             await connection.commit();
 
@@ -207,7 +232,10 @@ class UserController {
                         identifiantTemporaire: tempId,
                         annee: studentData.annee,
                         ecole: ecoleRows[0]?.nom || null,
-                        filiere: filiereRows[0]?.nom || null
+                        filiere: filiereRows[0]?.nom || null,
+                        whatsapp: studentData.whatsapp || null,
+                        additionalInfo: studentData.additionalInfo || null,
+                        activities: studentData.activities || []
                     }
                 }
             };
@@ -216,6 +244,28 @@ class UserController {
             throw error;
         } finally {
             await connection.release();
+        }
+    }
+
+    async insertStudentActivities(studentId, activities, connection) {
+        if (activities && activities.length > 0) {
+            // Vérifier d'abord que les activités existent
+            const placeholders = activities.map(() => '?').join(',');
+            const [existingActivities] = await connection.execute(
+                `SELECT id FROM activities WHERE id IN (${placeholders}) AND actif = TRUE`,
+                activities
+            );
+
+            if (existingActivities.length !== activities.length) {
+                throw new Error("Certaines activités sélectionnées sont invalides.");
+            }
+
+            // Insérer les activités
+            const activityValues = activities.map(activityId => [studentId, activityId]);
+            await connection.query(
+                'INSERT INTO student_activities (student_id, activity_id) VALUES ?',
+                [activityValues]
+            );
         }
     }
 

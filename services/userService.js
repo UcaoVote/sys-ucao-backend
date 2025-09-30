@@ -29,6 +29,11 @@ class UserService {
         return !/[<>"'`]/.test(text);
     }
 
+    validatePhone(phone) {
+        // Validation basique pour les numéros internationaux
+        return /^[\+]?[0-9\s\-\(\)]{8,}$/.test(phone);
+    }
+
     // Vérifier si l'email existe
     async checkEmailExists(email) {
         let connection;
@@ -116,7 +121,7 @@ class UserService {
         }
     }
 
-    // Créer un étudiant (1ère année)
+    // Créer un étudiant (1ère année) - CORRIGÉ
     async createFirstYearStudent(studentData, userId) {
         let connection;
         try {
@@ -126,8 +131,8 @@ class UserService {
 
             await connection.execute(
                 `INSERT INTO etudiants 
-            (userId, nom, prenom, identifiantTemporaire, filiereId, annee, codeInscription, ecoleId) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                (userId, nom, prenom, identifiantTemporaire, filiereId, annee, codeInscription, ecoleId, whatsapp, additional_info) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     userId,
                     studentData.nom,
@@ -136,7 +141,9 @@ class UserService {
                     studentData.filiereId,
                     studentData.annee,
                     studentData.codeInscription,
-                    studentData.ecoleId
+                    studentData.ecoleId,
+                    studentData.whatsapp || null,
+                    studentData.additionalInfo || null
                 ]
             );
 
@@ -146,8 +153,7 @@ class UserService {
         }
     }
 
-
-    // Mettre à jour un étudiant existant (2e/3e année)
+    // Mettre à jour un étudiant existant (2e/3e année) - CORRIGÉ
     async updateStudent(studentData, studentId, userId) {
         let connection;
         try {
@@ -157,10 +163,20 @@ class UserService {
 
             await connection.execute(
                 `UPDATE etudiants 
-        SET userId = ?, nom = ?, prenom = ?, identifiantTemporaire = ?, filiere = ?, annee = ?, ecole = ? 
-        WHERE id = ?`,
-                [userId, studentData.nom, studentData.prenom, temporaryIdentifiant,
-                    studentData.filiere, studentData.annee, studentData.ecole, studentId]
+                SET userId = ?, nom = ?, prenom = ?, identifiantTemporaire = ?, filiereId = ?, annee = ?, ecoleId = ?, whatsapp = ?, additional_info = ? 
+                WHERE id = ?`,
+                [
+                    userId,
+                    studentData.nom,
+                    studentData.prenom,
+                    temporaryIdentifiant,
+                    studentData.filiereId,
+                    studentData.annee,
+                    studentData.ecoleId,
+                    studentData.whatsapp || null,
+                    studentData.additionalInfo || null,
+                    studentId
+                ]
             );
 
             return temporaryIdentifiant;
@@ -184,12 +200,50 @@ class UserService {
         }
     }
 
+    // Vérifier que la filière appartient à l'école
     async checkFiliereInEcole(filiereId, ecoleId) {
-        const [rows] = await pool.execute(
-            `SELECT id FROM filieres WHERE id = ? AND ecoleId = ?`,
-            [filiereId, ecoleId]
-        );
-        return rows.length > 0;
+        let connection;
+        try {
+            connection = await pool.getConnection();
+            const [rows] = await connection.execute(
+                `SELECT id FROM filieres WHERE id = ? AND ecoleId = ?`,
+                [filiereId, ecoleId]
+            );
+            return rows.length > 0;
+        } finally {
+            if (connection) await connection.release();
+        }
+    }
+
+    // Vérifier l'existence des activités
+    async validateActivities(activities) {
+        if (!activities || activities.length === 0) {
+            return { valid: true, validActivities: [] };
+        }
+
+        let connection;
+        try {
+            connection = await pool.getConnection();
+            const placeholders = activities.map(() => '?').join(',');
+            const [rows] = await connection.execute(
+                `SELECT id FROM activities WHERE id IN (${placeholders}) AND actif = TRUE`,
+                activities
+            );
+
+            const validActivities = rows.map(row => row.id);
+            const invalidActivities = activities.filter(id => !validActivities.includes(id));
+
+            if (invalidActivities.length > 0) {
+                return {
+                    valid: false,
+                    message: `Activités invalides: ${invalidActivities.join(', ')}`
+                };
+            }
+
+            return { valid: true, validActivities };
+        } finally {
+            if (connection) await connection.release();
+        }
     }
 
 }
