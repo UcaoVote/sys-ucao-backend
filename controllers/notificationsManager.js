@@ -41,17 +41,37 @@ async function getAdminNotifications(req, res) {
 async function getUserNotifications(req, res) {
     try {
         const userId = req.user.id;
+
+        if (!userId) {
+            return res.status(400).json({
+                error: 'ID utilisateur manquant'
+            });
+        }
+
         let { page = 1, limit = 10, unreadOnly = false } = req.query;
 
-        // Conversion des paramètres en nombres
+        // Conversion et validation des paramètres
         limit = parseInt(limit);
         page = parseInt(page);
+
+        if (isNaN(limit) || limit < 1) limit = 10;
+        if (isNaN(page) || page < 1) page = 1;
+
         const offset = (page - 1) * limit;
 
         // Construction de la requête de base
         let query = `
-            SELECT id, title, message, type, priority, is_read as isRead, 
-                   relatedEntity, entityId, createdAt, updatedAt
+            SELECT 
+                id, 
+                title, 
+                message, 
+                type, 
+                priority, 
+                is_read as isRead, 
+                relatedEntity, 
+                entityId, 
+                createdAt, 
+                updatedAt
             FROM notifications 
             WHERE userId = ?
         `;
@@ -66,34 +86,65 @@ async function getUserNotifications(req, res) {
 
         // Ajout de l'ordre et de la pagination
         query += ' ORDER BY createdAt DESC LIMIT ? OFFSET ?';
-
-        // Ajout des paramètres de pagination
         params.push(limit);
         params.push(offset);
+
+        console.log('Executing query:', { query, params });
 
         const [notifications] = await pool.execute(query, params);
 
         // Compter le total pour la pagination
         let countQuery = 'SELECT COUNT(*) as total FROM notifications WHERE userId = ?';
+        const countParams = [userId];
+
         if (unreadOnly === 'true') {
             countQuery += ' AND is_read = FALSE';
         }
 
-        const [countResult] = await pool.execute(countQuery, [userId]);
+        console.log('Executing count query:', { countQuery, countParams });
 
+        const [countResult] = await pool.execute(countQuery, countParams);
+
+        // Envoi de la réponse
         res.json({
+            success: true,
             notifications,
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: page,
+                limit: limit,
                 total: countResult[0].total,
                 pages: Math.ceil(countResult[0].total / limit)
             }
         });
     } catch (error) {
-        console.error('Error fetching notifications:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('Erreur getUserNotifications:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erreur lors de la récupération des notifications'
+        });
+    } const [notifications] = await pool.execute(query, params);
+
+    // Compter le total pour la pagination
+    let countQuery = 'SELECT COUNT(*) as total FROM notifications WHERE userId = ?';
+    if (unreadOnly === 'true') {
+        countQuery += ' AND is_read = FALSE';
     }
+
+    const [countResult] = await pool.execute(countQuery, [userId]);
+
+    res.json({
+        notifications,
+        pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total: countResult[0].total,
+            pages: Math.ceil(countResult[0].total / limit)
+        }
+    });
+} catch (error) {
+    console.error('Error fetching notifications:', error);
+    res.status(500).json({ error: 'Internal server error' });
+}
 }
 
 // Marquer une notification comme lue
