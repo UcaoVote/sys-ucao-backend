@@ -9,7 +9,7 @@ import './scripts/reminders.js';
 import electionInitializer from './scripts/initElections.js';
 
 // Import des routes
-
+import activityStudentsRouter from './routes/activityStudents.js';
 import uploadRouter from './routes/upload.js';
 import matriculesRouter from './routes/import.js';
 import userLoginRouter from './routes/userLogin.js';
@@ -98,6 +98,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 // ==================== ROUTES API ====================
+app.use('/api/activities', activityStudentsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/matricules', matriculesRouter);
 app.use('/api/upload', uploadRouter);
