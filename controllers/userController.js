@@ -126,7 +126,6 @@ class UserController {
         }
     }
 
-    // Dans handleFirstYearRegistration - CORRIGÉ
     async handleFirstYearRegistration(studentData) {
         const connection = await pool.getConnection();
         try {
@@ -147,9 +146,17 @@ class UserController {
             // Marquer le code comme utilisé
             await userService.markCodeAsUsed(studentData.codeInscription, userId);
 
-            // Insérer les activités sélectionnées avec l'ID réel de l'étudiant
-            if (studentData.activities && studentData.activities.length > 0) {
-                await this.insertStudentActivities(studentId, studentData.activities, connection);
+            // S'assurer que activities est un tableau valide
+            const activities = Array.isArray(studentData.activities)
+                ? studentData.activities.filter(activityId =>
+                    activityId !== undefined &&
+                    activityId !== null &&
+                    !isNaN(parseInt(activityId)))
+                : [];
+
+            // CORRECTION : Utiliser le tableau filtré 'activities' au lieu de 'studentData.activities'
+            if (activities.length > 0) {
+                await this.insertStudentActivities(studentId, activities, connection);
             }
 
             await connection.commit();
@@ -172,7 +179,7 @@ class UserController {
                         filiere: filiereRows[0]?.nom || null,
                         whatsapp: studentData.whatsapp || null,
                         additionalInfo: studentData.additionalInfo || null,
-                        activities: studentData.activities || []
+                        activities: activities // CORRECTION : Utiliser le tableau filtré
                     }
                 }
             };
@@ -249,22 +256,42 @@ class UserController {
     }
 
     async insertStudentActivities(studentId, activities, connection) {
-        if (activities && activities.length > 0) {
-            // Vérifier d'abord que les activités existent
-            const placeholders = activities.map(() => '?').join(',');
-            const [existingActivities] = await connection.execute(
-                `SELECT id FROM activities WHERE id IN (${placeholders}) AND actif = TRUE`,
-                activities
+        // Vérifier que studentId est défini
+        if (!studentId) {
+            throw new Error("ID étudiant non défini.");
+        }
+
+        // Filtrer et valider les activités
+        if (activities && Array.isArray(activities) && activities.length > 0) {
+            // Filtrer les activités valides (non undefined, non null, nombres)
+            const validActivities = activities.filter(activityId =>
+                activityId !== undefined &&
+                activityId !== null &&
+                !isNaN(parseInt(activityId))
             );
 
-            if (existingActivities.length !== activities.length) {
-                throw new Error("Certaines activités sélectionnées sont invalides.");
+            if (validActivities.length === 0) {
+                console.log("Aucune activité valide à insérer");
+                return;
             }
 
-            // Récupérer l'ID réel de l'étudiant à partir de l'identifiant temporaire
+            // Vérifier d'abord que les activités existent
+            const placeholders = validActivities.map(() => '?').join(',');
+            const [existingActivities] = await connection.execute(
+                `SELECT id FROM activities WHERE id IN (${placeholders}) AND actif = TRUE`,
+                validActivities
+            );
+
+            if (existingActivities.length !== validActivities.length) {
+                const existingIds = existingActivities.map(a => a.id);
+                const invalidActivities = validActivities.filter(id => !existingIds.includes(id));
+                console.warn("Activités invalides ignorées:", invalidActivities);
+            }
+
+            // Récupérer l'ID réel de l'étudiant
             const [studentRows] = await connection.execute(
-                'SELECT id FROM etudiants WHERE identifiantTemporaire = ?',
-                [studentId]
+                'SELECT id FROM etudiants WHERE identifiantTemporaire = ? OR id = ?',
+                [studentId, studentId]
             );
 
             if (studentRows.length === 0) {
@@ -273,12 +300,25 @@ class UserController {
 
             const realStudentId = studentRows[0].id;
 
-            // Insérer les activités avec le vrai ID étudiant
-            const activityValues = activities.map(activityId => [realStudentId, activityId]);
-            await connection.query(
-                'INSERT INTO student_activities (student_id, activity_id) VALUES ?',
-                [activityValues]
+            // Utiliser seulement les activités valides qui existent
+            const validExistingActivities = validActivities.filter(activityId =>
+                existingActivities.some(a => a.id === activityId)
             );
+
+            if (validExistingActivities.length > 0) {
+                // Insérer les activités
+                const activityValues = validExistingActivities.map(activityId => [realStudentId, activityId]);
+                await connection.query(
+                    'INSERT INTO student_activities (student_id, activity_id) VALUES ?',
+                    [activityValues]
+                );
+
+                console.log(`${validExistingActivities.length} activités insérées pour l'étudiant ${realStudentId}`);
+            } else {
+                console.log("Aucune activité valide à insérer après validation");
+            }
+        } else {
+            console.log("Aucune activité fournie ou tableau vide");
         }
     }
 }
