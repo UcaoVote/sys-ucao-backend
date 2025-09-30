@@ -129,7 +129,7 @@ class UserService {
 
             const temporaryIdentifiant = this.generateTemporaryIdentifiant();
 
-            await connection.execute(
+            const [result] = await connection.execute(
                 `INSERT INTO etudiants 
                 (userId, nom, prenom, identifiantTemporaire, filiereId, annee, codeInscription, ecoleId, whatsapp, additional_info) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

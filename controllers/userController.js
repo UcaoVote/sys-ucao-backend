@@ -1,5 +1,6 @@
 import userService from '../services/userService.js';
 import pool from '../dbconfig.js';
+
 class UserController {
     async register(req, res) {
         try {
@@ -7,7 +8,7 @@ class UserController {
                 email, password, confirmPassword,
                 nom, prenom, filiereId, ecoleId,
                 annee, codeInscription, matricule,
-                activities, whatsapp, additionalInfo
+                activities, subactivities, whatsapp, additionalInfo
             } = req.body;
 
             // Validation des champs obligatoires
@@ -96,7 +97,8 @@ class UserController {
                 result = await this.handleFirstYearRegistration({
                     email, password, nom, prenom,
                     filiereId, ecoleId, annee: anneeInt,
-                    codeInscription, whatsapp, additionalInfo, activities
+                    codeInscription, whatsapp, additionalInfo,
+                    activities, subactivities
                 });
             }
             // 2e/3e année : matricule
@@ -111,7 +113,8 @@ class UserController {
                 result = await this.handleUpperYearRegistration({
                     email, password, nom, prenom,
                     filiereId, ecoleId, annee: anneeInt,
-                    matricule, whatsapp, additionalInfo, activities
+                    matricule, whatsapp, additionalInfo,
+                    activities, subactivities
                 });
             }
 
@@ -141,12 +144,12 @@ class UserController {
             const userId = await userService.createUser(studentData);
 
             // Créer l'étudiant et récupérer l'ID réel
-            const { tempId, studentId } = await userService.createFirstYearStudent(studentData, userId);
+            const studentId = await userService.createFirstYearStudent(studentData, userId);
 
             // Marquer le code comme utilisé
             await userService.markCodeAsUsed(studentData.codeInscription, userId);
 
-            // S'assurer que activities est un tableau valide
+            // Gérer les activités principales
             const activities = Array.isArray(studentData.activities)
                 ? studentData.activities.filter(activityId =>
                     activityId !== undefined &&
@@ -154,9 +157,13 @@ class UserController {
                     !isNaN(parseInt(activityId)))
                 : [];
 
-            // CORRECTION : Utiliser le tableau filtré 'activities' au lieu de 'studentData.activities'
             if (activities.length > 0) {
                 await this.insertStudentActivities(studentId, activities, connection);
+            }
+
+            // Gérer les sous-activités
+            if (studentData.subactivities && typeof studentData.subactivities === 'object') {
+                await this.insertStudentSubactivities(studentId, studentData.subactivities, connection);
             }
 
             await connection.commit();
@@ -173,13 +180,14 @@ class UserController {
                         id: userId,
                         nom: studentData.nom,
                         prenom: studentData.prenom,
-                        identifiantTemporaire: tempId,
+                        identifiantTemporaire: studentId,
                         annee: studentData.annee,
                         ecole: ecoleRows[0]?.nom || null,
                         filiere: filiereRows[0]?.nom || null,
                         whatsapp: studentData.whatsapp || null,
                         additionalInfo: studentData.additionalInfo || null,
-                        activities: activities // CORRECTION : Utiliser le tableau filtré
+                        activities: activities,
+                        subactivities: studentData.subactivities || {}
                     }
                 }
             };
@@ -217,9 +225,14 @@ class UserController {
                 userId
             );
 
-            // Insérer les activités sélectionnées
+            // Insérer les activités principales
             if (studentData.activities && studentData.activities.length > 0) {
                 await this.insertStudentActivities(matriculeValidation.studentId, studentData.activities, connection);
+            }
+
+            // Insérer les sous-activités
+            if (studentData.subactivities && typeof studentData.subactivities === 'object') {
+                await this.insertStudentSubactivities(matriculeValidation.studentId, studentData.subactivities, connection);
             }
 
             await connection.commit();
@@ -243,7 +256,8 @@ class UserController {
                         filiere: filiereRows[0]?.nom || null,
                         whatsapp: studentData.whatsapp || null,
                         additionalInfo: studentData.additionalInfo || null,
-                        activities: studentData.activities || []
+                        activities: studentData.activities || [],
+                        subactivities: studentData.subactivities || {}
                     }
                 }
             };
@@ -319,6 +333,63 @@ class UserController {
             }
         } else {
             console.log("Aucune activité fournie ou tableau vide");
+        }
+    }
+
+    async insertStudentSubactivities(studentId, subactivities, connection) {
+        if (!studentId || !subactivities || typeof subactivities !== 'object') {
+            return;
+        }
+
+        // Récupérer l'ID réel de l'étudiant
+        const [studentRows] = await connection.execute(
+            'SELECT id FROM etudiants WHERE identifiantTemporaire = ? OR id = ?',
+            [studentId, studentId]
+        );
+
+        if (studentRows.length === 0) {
+            throw new Error("Étudiant non trouvé.");
+        }
+
+        const realStudentId = studentRows[0].id;
+
+        // Préparer les données d'insertion
+        const insertData = [];
+
+        for (const [activityId, subactivityIds] of Object.entries(subactivities)) {
+            if (Array.isArray(subactivityIds) && subactivityIds.length > 0) {
+                for (const subactivityId of subactivityIds) {
+                    if (subactivityId !== undefined && subactivityId !== null && !isNaN(parseInt(subactivityId))) {
+                        insertData.push([realStudentId, parseInt(activityId), parseInt(subactivityId)]);
+                    }
+                }
+            }
+        }
+
+        if (insertData.length > 0) {
+            // Vérifier que les sous-activités existent et appartiennent aux bonnes activités
+            const allSubactivityIds = [...new Set(insertData.map(item => item[2]))];
+            const placeholders = allSubactivityIds.map(() => '?').join(',');
+
+            const [existingSubs] = await connection.execute(
+                `SELECT id, activity_id FROM subactivities WHERE id IN (${placeholders}) AND actif = TRUE`,
+                allSubactivityIds
+            );
+
+            // Filtrer seulement les combinaisons valides
+            const validInsertData = insertData.filter(([studentId, activityId, subactivityId]) => {
+                return existingSubs.some(sub =>
+                    sub.id === subactivityId && sub.activity_id === activityId
+                );
+            });
+
+            if (validInsertData.length > 0) {
+                await connection.query(
+                    'INSERT INTO student_subactivities (student_id, activity_id, subactivity_id) VALUES ?',
+                    [validInsertData]
+                );
+                console.log(`${validInsertData.length} sous-activités insérées pour l'étudiant ${realStudentId}`);
+            }
         }
     }
 }
