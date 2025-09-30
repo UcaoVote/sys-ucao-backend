@@ -160,7 +160,6 @@ async function addStudent(studentData) {
     }
 }
 
-
 // 5. Modifier les informations d'un étudiant(Validé)
 async function updateStudent(studentId, updates) {
     const connection = await pool.getConnection();
@@ -290,7 +289,6 @@ async function getStatsByFiliereAndAnnee() {
     `);
     return rows;
 }
-
 // 9. Vérifier les étudiants sans compte utilisateur actif
 async function getInactiveStudents() {
     try {
