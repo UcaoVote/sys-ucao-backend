@@ -42,10 +42,12 @@ async function getUserNotifications(req, res) {
     try {
         const userId = req.user.id;
         const { page = 1, limit = 10, unreadOnly = false } = req.query;
-        const offset = (page - 1) * limit;
+        const offset = (page - 1) * parseInt(limit);
 
         let query = `
-            SELECT * FROM notifications 
+            SELECT id, title, message, type, priority, is_read as isRead, 
+                   relatedEntity, entityId, createdAt, updatedAt
+            FROM notifications 
             WHERE userId = ?
         `;
 
@@ -56,7 +58,7 @@ async function getUserNotifications(req, res) {
         }
 
         query += ' ORDER BY createdAt DESC LIMIT ? OFFSET ?';
-        params.push(parseInt(limit), offset);
+        params = [userId, parseInt(limit), parseInt(offset)];
 
         const [notifications] = await pool.execute(query, params);
 
@@ -134,10 +136,52 @@ async function createNotification(req, res) {
     }
 }
 
+// Marquer toutes les notifications comme lues
+async function markAllAsRead(req, res) {
+    try {
+        const userId = req.user.id;
+
+        const [result] = await pool.execute(
+            'UPDATE notifications SET is_read = TRUE, updatedAt = NOW() WHERE userId = ? AND is_read = FALSE',
+            [userId]
+        );
+
+        res.json({
+            message: 'Toutes les notifications ont été marquées comme lues',
+            updatedCount: result.affectedRows
+        });
+    } catch (error) {
+        console.error('Erreur lors du marquage des notifications:', error);
+        res.status(500).json({ error: 'Erreur interne du serveur' });
+    }
+}
+
+// Effacer toutes les notifications d'un utilisateur
+async function clearAll(req, res) {
+    try {
+        const userId = req.user.id;
+
+        const [result] = await pool.execute(
+            'DELETE FROM notifications WHERE userId = ?',
+            [userId]
+        );
+
+        res.json({
+            message: 'Toutes les notifications ont été supprimées',
+            deletedCount: result.affectedRows
+        });
+    } catch (error) {
+        console.error('Erreur lors de la suppression des notifications:', error);
+        res.status(500).json({ error: 'Erreur interne du serveur' });
+    }
+}
+
 
 export default {
     getUserNotifications,
     markAsRead,
+    markAllAsRead,
+    clearAll,
     createNotification,
     getAdminNotifications
 };

@@ -15,11 +15,27 @@ router.get(
 );
 
 // Étudiant : marquer une notification comme lue
-router.patch(
-    '/:id/read',
+router.put(
+    '/read/:id',
     authenticateToken,
     requireRole('ETUDIANT'),
     notificationsController.markAsRead
+);
+
+// Marquer toutes les notifications comme lues
+router.put(
+    '/read-all',
+    authenticateToken,
+    requireRole('ETUDIANT'),
+    notificationsController.markAllAsRead
+);
+
+// Effacer toutes les notifications
+router.delete(
+    '/clear-all',
+    authenticateToken,
+    requireRole('ETUDIANT'),
+    notificationsController.clearAll
 );
 
 // Admin : créer une notification manuelle
