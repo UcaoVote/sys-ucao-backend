@@ -5,30 +5,30 @@ import NotificationService from '../services/notificationService.js';
 // Notifications Admin 
 async function getAdminNotifications(req, res) {
     try {
-        // Récupération et validation du paramètre limit
         let { limit = 10 } = req.query;
-        limit = parseInt(limit);
+        limit = parseInt(limit, 10);
 
         if (isNaN(limit) || limit < 1) {
             limit = 10;
         }
 
-        // Construction de la requête avec placeholder
         const query = `
-            SELECT 
-                al.action,
-                al.details,
-                al.createdAt,
-                al.actionType,
-                u.email
-            FROM activity_logs al
-            LEFT JOIN users u ON al.userId = u.id
-            WHERE al.actionType = 'ADMIN'
-            ORDER BY al.createdAt DESC
-            LIMIT ?`;
+    SELECT 
+        al.action,
+        al.details,
+        al.createdAt,
+        al.actionType,
+        u.email
+    FROM activity_logs al
+    LEFT JOIN users u ON al.userId = u.id
+    WHERE al.actionType = 'ADMIN'
+    ORDER BY al.createdAt DESC
+    LIMIT ${Math.max(0, parseInt(limit))}`;
 
-        // Exécution de la requête avec le paramètre
-        const [rows] = await pool.execute(query, [limit]);
+        console.log('Notification Query:', query);
+        console.log('Limit value:', limit);
+
+        const [rows] = await pool.execute(query, [parseInt(limit)]);
 
         res.json(rows);
     } catch (error) {
