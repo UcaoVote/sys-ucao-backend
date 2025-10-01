@@ -12,10 +12,10 @@ router.post('/', authenticateToken, validateVoting, voteController.submitVote);
 router.get('/status/:electionId', authenticateToken, voteController.getVoteStatus);
 router.post('/validate-token', authenticateToken, voteController.validateToken);
 
-// Routes publiques (résultats)
+// Routes publiques 
 router.get('/results/:electionId', voteController.getResults);
 // Routes admin (résultats détaillés)
-router.get('/results-detailed/:electionId', requireRole('ADMIN'), voteController.getDetailedResults);
+router.get('/results-detailed/:electionId', authenticateToken, requireRole('ADMIN'), voteController.getDetailedResults);
 // GET /api/votes/my-votes - Récupérer tous les votes de l'utilisateur
 router.get('/my-votes', authenticateToken, async (req, res) => {
     let connection;
@@ -132,8 +132,8 @@ router.get('/my-votes/stats', authenticateToken, async (req, res) => {
 router.post('/publish/:electionId', authenticateToken, requireRole('ADMIN'), voteController.publishResults);
 router.post('/unpublish/:electionId', authenticateToken, requireRole('ADMIN'), voteController.unpublishResults);
 router.get('/elections/completed', authenticateToken, requireRole('ADMIN'), voteController.getCompletedElections);
-router.get('/elections/:electionId/stats', requireRole('ADMIN'), voteController.getElectionStats);
-router.get('/:electionId/visibility', voteController.getResultsVisibility);
+router.get('/elections/:electionId/stats', authenticateToken, requireRole('ADMIN'), voteController.getElectionStats);
+router.get('/:electionId/visibility', authenticateToken, voteController.getResultsVisibility);
 
 
 export default router;
