@@ -129,9 +129,9 @@ router.get('/my-votes/stats', authenticateToken, async (req, res) => {
 });
 
 // Routes pour la publication des résultats
-router.post('/publish/:electionId', requireRole('ADMIN'), voteController.publishResults);
-router.post('/unpublish/:electionId', requireRole('ADMIN'), voteController.unpublishResults);
-router.get('/elections/completed', requireRole('ADMIN'), voteController.getCompletedElections);
+router.post('/publish/:electionId', authenticateToken, requireRole('ADMIN'), voteController.publishResults);
+router.post('/unpublish/:electionId', authenticateToken, requireRole('ADMIN'), voteController.unpublishResults);
+router.get('/elections/completed', authenticateToken, requireRole('ADMIN'), voteController.getCompletedElections);
 router.get('/elections/:electionId/stats', requireRole('ADMIN'), voteController.getElectionStats);
 router.get('/:electionId/visibility', voteController.getResultsVisibility);
 
