@@ -2,6 +2,33 @@
 import pool from '../dbconfig.js';
 import NotificationService from '../services/notificationService.js';
 
+
+
+async function getUnreadNotifications(req, res) {
+    try {
+        const userId = req.user.id; // L'ID de l'utilisateur connecté
+
+        // Récupérer uniquement les notifications non lues de l'utilisateur
+        const unreadNotifications = await Notification.find({
+            user: userId,
+            read: false
+        }).sort({ createdAt: -1 }); // Tri par date décroissante
+
+        res.json({
+            success: true,
+            notifications: unreadNotifications,
+            count: unreadNotifications.length
+        });
+    } catch (error) {
+        console.error('Erreur lors de la récupération des notifications non lues:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur lors de la récupération des notifications non lues'
+        });
+    }
+};
+
+
 // Notifications Admin 
 async function getAdminNotifications(req, res) {
     try {
@@ -37,7 +64,6 @@ async function getAdminNotifications(req, res) {
     }
 }
 
-// Corriger les autres méthodes pour utiliser les bons noms de colonnes
 async function getUserNotifications(req, res) {
     try {
         const userId = req.user.id;
@@ -49,16 +75,13 @@ async function getUserNotifications(req, res) {
             });
         }
 
-        // Get and validate query parameters
         let { limit = 10, unreadOnly = false } = req.query;
 
-        // Convert and validate parameters
         limit = parseInt(limit, 10);
         if (isNaN(limit) || limit < 1) {
             limit = 10;
         }
 
-        // Build main query
         const query = `
             SELECT 
                 id, 
@@ -77,12 +100,9 @@ async function getUserNotifications(req, res) {
             LIMIT ${Math.max(0, parseInt(limit))}
         `;
 
-        console.log('User Notification Query:', query);
-        console.log('Limit value:', limit);
-
         const [notifications] = await pool.execute(query, [userId]);
 
-        // Send response
+
         return res.json({
             success: true,
             notifications
@@ -195,5 +215,6 @@ export default {
     markAllAsRead,
     clearAll,
     createNotification,
-    getAdminNotifications
+    getAdminNotifications,
+    getUnreadNotifications
 };

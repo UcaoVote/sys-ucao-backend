@@ -3,7 +3,6 @@ import express from 'express';
 import notificationsController from '../controllers/notificationsManager.js';
 import { authenticateToken, requireRole } from '../middlewares/auth.js';
 
-
 const router = express.Router();
 
 // Étudiant : consulter ses notifications
@@ -12,6 +11,14 @@ router.get(
     authenticateToken,
     requireRole('ETUDIANT'),
     notificationsController.getUserNotifications
+);
+
+// Récupérer uniquement les notifications non lues
+router.get(
+    '/unread',
+    authenticateToken,
+    requireRole('ETUDIANT'),
+    notificationsController.getUnreadNotifications
 );
 
 // Étudiant : marquer une notification comme lue

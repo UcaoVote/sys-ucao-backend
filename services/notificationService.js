@@ -2,7 +2,7 @@ import pool from '../dbconfig.js';
 import { randomUUID } from 'crypto';
 
 class NotificationService {
-    // La méthode validate doit correspondre à votre schéma
+
     static validate(data) {
         const required = ['title', 'message', 'type', 'priority', 'userId'];
         for (const field of required) {
@@ -12,7 +12,6 @@ class NotificationService {
         }
     }
 
-    // Modifiez la requête SQL pour utiliser les bons noms de colonnes
     static async sendUserNotification(notificationData) {
         try {
             this.validate(notificationData);
