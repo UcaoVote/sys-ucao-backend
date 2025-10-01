@@ -155,11 +155,24 @@ class UserProfileService {
     }
 
     // Uploader l'avatar vers ImgBB
-    async uploadAvatar(filePath, userId) {
+    async uploadAvatar(fileBuffer, fileName, mimeType, userId) {
         try {
+            console.log('Starting ImgBB upload...');
+            console.log('File details:', { fileName, mimeType, bufferSize: fileBuffer.length });
+
             // Créer un FormData pour ImgBB
             const formData = new FormData();
-            formData.append('image', fs.createReadStream(filePath));
+
+            // Convertir le buffer en base64 pour ImgBB
+            const base64Image = fileBuffer.toString('base64');
+            formData.append('image', base64Image);
+
+            // Ajouter un nom de fichier optionnel
+            if (fileName) {
+                formData.append('name', fileName.replace(/\.[^/.]+$/, "")); // Retirer l'extension
+            }
+
+            console.log('Sending to ImgBB...');
 
             // Envoyer à ImgBB
             const response = await axios.post(
@@ -171,24 +184,26 @@ class UserProfileService {
                 }
             );
 
-            // Supprimer le fichier temporaire après upload
-            fs.unlinkSync(filePath);
+            console.log('ImgBB response:', response.data);
 
             if (!response.data.success) {
-                throw new Error('Échec de l\'upload vers ImgBB');
+                throw new Error('Échec de l\'upload vers ImgBB: ' + JSON.stringify(response.data));
             }
+
+            const imgbbUrl = response.data.data.url;
+            console.log('Upload successful. URL:', imgbbUrl);
 
             // Mettre à jour l'URL dans la base de données
             let connection;
             try {
                 connection = await pool.getConnection();
 
-                const imgbbUrl = response.data.data.url;
-
                 await connection.execute(
                     `UPDATE etudiants SET photoUrl = ? WHERE userId = ?`,
                     [imgbbUrl, userId]
                 );
+
+                console.log('Database updated successfully');
 
                 return imgbbUrl;
             } finally {
@@ -196,10 +211,16 @@ class UserProfileService {
             }
 
         } catch (error) {
-            // Nettoyage du fichier temporaire en cas d'erreur
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
+            console.error('Upload error:', error);
+
+            // Gestion des erreurs spécifiques
+            if (error.response?.data?.error?.message) {
+                throw new Error(`ImgBB Error: ${error.response.data.error.message}`);
             }
+            if (error.code === 'ECONNABORTED') {
+                throw new Error('Timeout lors de l\'upload vers ImgBB');
+            }
+
             throw error;
         }
     }

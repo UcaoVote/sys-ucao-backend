@@ -74,6 +74,15 @@ class UserProfileController {
     // Changer l'avatar
     async uploadAvatar(req, res) {
         try {
+            console.log('=== UPLOAD AVATAR START ===');
+            console.log('User:', req.user);
+            console.log('File received:', req.file ? {
+                originalname: req.file.originalname,
+                mimetype: req.file.mimetype,
+                size: req.file.size,
+                bufferLength: req.file.buffer?.length
+            } : 'No file');
+
             if (!req.file) {
                 return res.status(400).json({
                     success: false,
@@ -81,26 +90,41 @@ class UserProfileController {
                 });
             }
 
-            const photoUrl = await userProfileService.uploadAvatar(req.file.path, req.user.id);
+            // Utiliser le buffer directement au lieu de file.path
+            const photoUrl = await userProfileService.uploadAvatar(
+                req.file.buffer,
+                req.file.originalname,
+                req.file.mimetype,
+                req.user.id
+            );
 
             res.json({
                 success: true,
                 data: {
                     photoUrl: photoUrl
                 },
-                message: 'Photo mis à jour avec succès'
+                message: 'Photo mise à jour avec succès'
             });
+
         } catch (error) {
             console.error('Erreur upload photo:', error);
 
-            // Nettoyage du fichier temporaire en cas d'erreur
-            if (req.file?.path && fs.existsSync(req.file.path)) {
-                fs.unlinkSync(req.file.path);
+            let errorMessage = 'Erreur lors de l\'upload de l\'avatar';
+            let statusCode = 500;
+
+            if (error.message.includes('Type de fichier non supporté')) {
+                errorMessage = 'Type de fichier non supporté';
+                statusCode = 400;
+            } else if (error.message.includes('File too large')) {
+                errorMessage = 'Fichier trop volumineux (max 2MB)';
+                statusCode = 400;
+            } else if (error.message.includes('ImgBB')) {
+                errorMessage = 'Erreur du service d\'upload d\'images';
             }
 
-            res.status(500).json({
+            res.status(statusCode).json({
                 success: false,
-                message: error.message || 'Erreur lors de l\'upload de l\'avatar',
+                message: errorMessage,
                 error: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         }
