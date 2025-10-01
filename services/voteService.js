@@ -687,6 +687,250 @@ AND (? IS NULL OR rs.ecole = ?)
         return false;
     }
 
+
+    async publishResults(electionId) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+
+            const [electionRows] = await connection.execute(
+                'SELECT * FROM elections WHERE id = ?',
+                [parseInt(electionId)]
+            );
+
+            if (electionRows.length === 0) {
+                throw new Error('Élection non trouvée');
+            }
+
+            const election = electionRows[0];
+
+            // Vérifier si l'élection est terminée
+            if (election.isActive) {
+                throw new Error('Impossible de publier les résultats d\'une élection active');
+            }
+
+            // Vérifier si les résultats sont déjà publiés
+            if (election.resultsPublished) {
+                throw new Error('Les résultats de cette élection sont déjà publiés');
+            }
+
+            // Vérifier que l'élection est en mode manuel
+            if (election.resultsVisibility !== 'manuel') {
+                throw new Error('Cette élection est en mode automatique, la publication manuelle est désactivée');
+            }
+
+            await connection.execute(
+                'UPDATE elections SET resultsPublished = TRUE, publishedAt = NOW() WHERE id = ?',
+                [parseInt(electionId)]
+            );
+
+            await ActivityManager.createActivityLog({
+                action: 'Résultats publiés manuellement',
+                userId: null,
+                details: `Publication manuelle des résultats de l'élection: ${election.titre}`,
+                actionType: 'PUBLICATION',
+                module: 'ELECTION'
+            });
+
+            return {
+                success: true,
+                message: 'Résultats publiés avec succès',
+                election: {
+                    id: election.id,
+                    titre: election.titre,
+                    resultsPublished: true,
+                    resultsVisibility: election.resultsVisibility,
+                    publishedAt: new Date()
+                }
+            };
+
+        } finally {
+            if (connection) await connection.release();
+        }
+    }
+    async unpublishResults(electionId) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+
+            const [electionRows] = await connection.execute(
+                'SELECT * FROM elections WHERE id = ?',
+                [parseInt(electionId)]
+            );
+
+            if (electionRows.length === 0) {
+                throw new Error('Élection non trouvée');
+            }
+
+            const election = electionRows[0];
+
+            if (!election.resultsPublished) {
+                throw new Error('Les résultats de cette élection ne sont pas publiés');
+            }
+
+            // Vérifier que l'élection est en mode manuel (on ne peut masquer que les résultats publiés manuellement)
+            if (election.resultsVisibility !== 'manuel') {
+                throw new Error('Impossible de masquer les résultats d\'une élection en mode automatique');
+            }
+
+            await connection.execute(
+                'UPDATE elections SET resultsPublished = FALSE, publishedAt = NULL WHERE id = ?',
+                [parseInt(electionId)]
+            );
+
+            await ActivityManager.createActivityLog({
+                action: 'Résultats masqués',
+                userId: null,
+                details: `Masquage des résultats de l'élection: ${election.titre}`,
+                actionType: 'PUBLICATION',
+                module: 'ELECTION'
+            });
+
+            return {
+                success: true,
+                message: 'Résultats masqués avec succès',
+                election: {
+                    id: election.id,
+                    titre: election.titre,
+                    resultsPublished: false,
+                    resultsVisibility: election.resultsVisibility,
+                    publishedAt: null
+                }
+            };
+
+        } finally {
+            if (connection) await connection.release();
+        }
+    }
+    async getCompletedElections() {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+
+            const [elections] = await connection.execute(`
+            SELECT 
+                e.*,
+                COUNT(DISTINCT vt.id) as totalInscrits,
+                COUNT(DISTINCT v.id) as totalVotes,
+                CASE 
+                    WHEN COUNT(DISTINCT vt.id) > 0 
+                    THEN ROUND((COUNT(DISTINCT v.id) * 100.0 / COUNT(DISTINCT vt.id)), 2)
+                    ELSE 0 
+                END as tauxParticipation,
+                CASE 
+                    WHEN e.resultsVisibility = 'automatique' AND e.isActive = FALSE THEN TRUE
+                    WHEN e.resultsVisibility = 'manuel' AND e.resultsPublished = TRUE THEN TRUE
+                    ELSE FALSE
+                END as canDisplayResults
+            FROM elections e
+            LEFT JOIN vote_tokens vt ON e.id = vt.electionId
+            LEFT JOIN votes v ON e.id = v.electionId
+            WHERE e.isActive = FALSE
+            GROUP BY e.id
+            ORDER BY e.dateFin DESC
+        `);
+
+            return elections;
+
+        } finally {
+            if (connection) await connection.release();
+        }
+    }
+    async getElectionStats(electionId) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+
+            const [stats] = await connection.execute(`
+            SELECT 
+                e.*,
+                COUNT(DISTINCT vt.id) as totalInscrits,
+                COUNT(DISTINCT v.id) as totalVotes,
+                COUNT(DISTINCT c.id) as totalCandidats,
+                CASE 
+                    WHEN COUNT(DISTINCT vt.id) > 0 
+                    THEN ROUND((COUNT(DISTINCT v.id) * 100.0 / COUNT(DISTINCT vt.id)), 2)
+                    ELSE 0 
+                END as tauxParticipation
+            FROM elections e
+            LEFT JOIN vote_tokens vt ON e.id = vt.electionId
+            LEFT JOIN votes v ON e.id = v.electionId
+            LEFT JOIN candidates c ON e.id = c.electionId
+            WHERE e.id = ?
+            GROUP BY e.id
+        `, [parseInt(electionId)]);
+
+            if (stats.length === 0) {
+                throw new Error('Élection non trouvée');
+            }
+
+            return stats[0];
+
+        } finally {
+            if (connection) await connection.release();
+        }
+    }
+
+    async canDisplayResults(electionId) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+
+            const [electionRows] = await connection.execute(
+                'SELECT * FROM elections WHERE id = ?',
+                [parseInt(electionId)]
+            );
+
+            if (electionRows.length === 0) {
+                throw new Error('Élection non trouvée');
+            }
+
+            const election = electionRows[0];
+
+            // Logique de visibilité des résultats
+            if (election.isActive) {
+                return false; // Élection toujours active
+            }
+
+            if (election.resultsVisibility === 'automatique') {
+                return true; // Automatiquement publiée à la fin
+            }
+
+            if (election.resultsVisibility === 'manuel' && election.resultsPublished) {
+                return true; // Manuellement publiée par l'admin
+            }
+
+            return false; // Non publiée
+
+        } finally {
+            if (connection) await connection.release();
+        }
+    }
+
+    // Méthode pour publier automatiquement les élections terminées en mode automatique
+    async publishAutomaticElections() {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+
+            // Publier automatiquement les élections terminées en mode automatique
+            const [result] = await connection.execute(`
+            UPDATE elections 
+            SET resultsPublished = TRUE, publishedAt = NOW()
+            WHERE isActive = FALSE 
+            AND resultsVisibility = 'automatique'
+            AND resultsPublished = FALSE
+            AND dateFin < NOW()
+        `);
+
+            if (result.affectedRows > 0) {
+                console.log(`📢 ${result.affectedRows} élection(s) publiée(s) automatiquement`);
+            }
+
+        } finally {
+            if (connection) await connection.release();
+        }
+    }
 }
 
 export default new VoteService();

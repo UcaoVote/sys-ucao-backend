@@ -86,8 +86,17 @@ class VoteController {
     async getResults(req, res) {
         try {
             const { electionId } = req.params;
-            const result = await voteService.getElectionResults(electionId);
 
+            // Vérifier si les résultats peuvent être affichés
+            const canDisplay = await voteService.canDisplayResults(electionId);
+            if (!canDisplay) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Les résultats de cette élection ne sont pas encore disponibles'
+                });
+            }
+
+            const result = await voteService.getElectionResults(electionId);
             res.json({
                 success: true,
                 data: result
@@ -104,8 +113,7 @@ class VoteController {
 
             res.status(500).json({
                 success: false,
-                message: 'Erreur serveur',
-                error: process.env.NODE_ENV === 'development' ? error.message : undefined
+                message: 'Erreur serveur'
             });
         }
     }
@@ -131,8 +139,7 @@ class VoteController {
 
             res.status(500).json({
                 success: false,
-                message: 'Erreur serveur',
-                error: process.env.NODE_ENV === 'development' ? error.message : undefined
+                message: 'Erreur serveur'
             });
         }
     }
@@ -189,6 +196,125 @@ class VoteController {
                 message: 'Erreur serveur',
                 valid: false,
                 error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
+        }
+    }
+
+
+    async publishResults(req, res) {
+        try {
+            const { electionId } = req.params;
+            const result = await voteService.publishResults(electionId);
+
+            res.json({
+                success: true,
+                data: result
+            });
+        } catch (error) {
+            console.error('Erreur publication résultats:', error);
+
+            if (error.message.includes('non trouvée') ||
+                error.message.includes('active') ||
+                error.message.includes('déjà publiés')) {
+                return res.status(400).json({
+                    success: false,
+                    message: error.message
+                });
+            }
+
+            res.status(500).json({
+                success: false,
+                message: 'Erreur serveur lors de la publication'
+            });
+        }
+    }
+
+    async unpublishResults(req, res) {
+        try {
+            const { electionId } = req.params;
+            const result = await voteService.unpublishResults(electionId);
+
+            res.json({
+                success: true,
+                data: result
+            });
+        } catch (error) {
+            console.error('Erreur masquage résultats:', error);
+
+            if (error.message.includes('non trouvée') ||
+                error.message.includes('ne sont pas publiés')) {
+                return res.status(400).json({
+                    success: false,
+                    message: error.message
+                });
+            }
+
+            res.status(500).json({
+                success: false,
+                message: 'Erreur serveur lors du masquage'
+            });
+        }
+    }
+
+    async getCompletedElections(req, res) {
+        try {
+            const elections = await voteService.getCompletedElections();
+
+            res.json({
+                success: true,
+                data: elections
+            });
+        } catch (error) {
+            console.error('Erreur récupération élections terminées:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Erreur serveur'
+            });
+        }
+    }
+
+    async getElectionStats(req, res) {
+        try {
+            const { electionId } = req.params;
+            const stats = await voteService.getElectionStats(electionId);
+
+            res.json({
+                success: true,
+                data: stats
+            });
+        } catch (error) {
+            console.error('Erreur récupération statistiques:', error);
+
+            if (error.message.includes('non trouvée')) {
+                return res.status(404).json({
+                    success: false,
+                    message: error.message
+                });
+            }
+
+            res.status(500).json({
+                success: false,
+                message: 'Erreur serveur'
+            });
+        }
+    }
+
+    async getResultsVisibility(req, res) {
+        try {
+            const { electionId } = req.params;
+            const canDisplay = await voteService.canDisplayResults(electionId);
+
+            res.json({
+                success: true,
+                data: {
+                    canDisplay: canDisplay
+                }
+            });
+        } catch (error) {
+            console.error('Erreur vérification visibilité:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Erreur serveur'
             });
         }
     }
