@@ -28,6 +28,29 @@ async function getUnreadNotifications(req, res) {
     }
 };
 
+async function getUnreadCount(req, res) {
+    try {
+        const userId = req.user.id; // L'ID de l'utilisateur connecté
+
+        // Compter uniquement les notifications non lues de l'utilisateur
+        const unreadCount = await Notification.countDocuments({
+            user: userId,
+            read: false
+        });
+
+        res.json({
+            success: true,
+            count: unreadCount
+        });
+    } catch (error) {
+        console.error('Erreur lors du comptage des notifications non lues:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur lors du comptage des notifications non lues',
+            count: 0
+        });
+    }
+};
 
 // Notifications Admin 
 async function getAdminNotifications(req, res) {
@@ -216,5 +239,6 @@ export default {
     clearAll,
     createNotification,
     getAdminNotifications,
-    getUnreadNotifications
+    getUnreadNotifications,
+    getUnreadCount
 };

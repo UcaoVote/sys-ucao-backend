@@ -10,15 +10,21 @@ router.get(
     '/',
     authenticateToken,
     requireRole('ETUDIANT'),
-    notificationsController.getUserNotifications
+    (req, res, next) => {
+        // Si le paramètre unreadOnly=true est présent, rediriger vers la logique des notifications non lues
+        if (req.query.unreadOnly === 'true') {
+            return notificationsController.getUnreadNotifications(req, res, next);
+        }
+        return notificationsController.getUserNotifications(req, res, next);
+    }
 );
 
 // Récupérer uniquement les notifications non lues
 router.get(
-    '/unread',
+    '/unread/count',
     authenticateToken,
     requireRole('ETUDIANT'),
-    notificationsController.getUnreadNotifications
+    notificationsController.getUnreadCount
 );
 
 // Étudiant : marquer une notification comme lue
