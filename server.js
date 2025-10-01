@@ -5,8 +5,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import pool from './dbconfig.js';
 import './scripts/reminders.js';
-
 import electionInitializer from './scripts/initElections.js';
+import rateLimit from 'express-rate-limit';
 
 // Import des routes
 import activityStudentsRouter from './routes/activityStudents.js';
@@ -26,35 +26,37 @@ import votesRouter from './routes/votes.js';
 import institutionRouter from './routes/institution.js';
 import usersRouter from './routes/users.js';
 
-
-// Configuration
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Test DB
-app.get('/db', async (req, res) => {
-    try {
-        await pool.query('SELECT 1');
-        console.log(' Connexion DB OK');
-        res.send('Connexion DB OK');
-    } catch (error) {
-        console.error(' Erreur DB :', error.message);
-        res.status(500).send('Erreur de connexion DB');
-    }
+// 🔐 Trust proxy pour Render
+app.set('trust proxy', 1);
+
+// 🛡️ Middleware de rate limiting
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // max 100 requêtes par IP
+    keyGenerator: (req) => req.ip,
+    message: 'Trop de requêtes, réessayez plus tard.'
 });
-// Démarrer le traitement périodique des élections
-electionInitializer.startPeriodicProcessing();
-// Configuration CORS
+app.use(limiter);
+
+// 📍 Log IP pour audit
+app.use((req, res, next) => {
+    console.log('IP détectée :', req.ip);
+    next();
+});
+
+// 🔗 CORS
 const allowedOrigins = [
     'https://sys-voteucao-frontend-64pi.vercel.app',
     'http://localhost:3000'
 ];
-
 app.use(cors({
-    origin: function (origin, callback) {
+    origin: (origin, callback) => {
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
@@ -66,15 +68,15 @@ app.use(cors({
     credentials: true
 }));
 
-
-// Middlewares de base
+// 📦 Middlewares de base
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Dossier statique pour les uploads
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// ==================== ROUTE HEALTH CHECK ====================
+// 🔄 Traitement périodique
+electionInitializer.startPeriodicProcessing();
+
+// 🩺 Health check
 app.get('/api/health', async (req, res) => {
     let connection;
     try {
@@ -97,7 +99,7 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
-// ==================== ROUTES API ====================
+// 🧭 Routes API
 app.use('/api/activities', activityStudentsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/matricules', matriculesRouter);
@@ -115,9 +117,7 @@ app.use('/api/codes', codesRouter);
 app.use('/api/votes', votesRouter);
 app.use('/api', institutionRouter);
 
-
-
-// Route de test
+// 🧪 Route de test
 app.get('/api/test', (_req, res) => {
     res.json({
         message: 'API Vote UCAO opérationnelle',
@@ -128,8 +128,7 @@ app.get('/api/test', (_req, res) => {
     });
 });
 
-
-// Middleware de gestion d'erreurs global 
+// Gestion d’erreurs
 app.use((err, req, res, next) => {
     console.error('Erreur serveur:', err);
     if (res && typeof res.status === 'function') {
@@ -143,10 +142,9 @@ app.use((err, req, res, next) => {
     }
 });
 
-// Démarrage du serveur
+// Démarrage serveur
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || '0.0.0.0';
-
 app.listen(PORT, HOST, () => {
     console.log(`✅ Serveur Vote UCAO démarré sur http://${HOST}:${PORT}`);
     console.log(`🔧 Mode: ${process.env.NODE_ENV || 'development'}`);
