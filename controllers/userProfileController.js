@@ -88,10 +88,10 @@ class UserProfileController {
                 data: {
                     photoUrl: photoUrl
                 },
-                message: 'Avatar mis à jour avec succès'
+                message: 'Photo mis à jour avec succès'
             });
         } catch (error) {
-            console.error('Erreur upload avatar:', error);
+            console.error('Erreur upload photo:', error);
 
             // Nettoyage du fichier temporaire en cas d'erreur
             if (req.file?.path && fs.existsSync(req.file.path)) {
