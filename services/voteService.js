@@ -818,8 +818,8 @@ AND (? IS NULL OR rs.ecole = ?)
                     ELSE 0 
                 END as tauxParticipation,
                 CASE 
-                    WHEN e.resultsVisibility = 'automatique' AND e.isActive = FALSE THEN TRUE
-                    WHEN e.resultsVisibility = 'manuel' AND e.resultsPublished = TRUE THEN TRUE
+                    WHEN e.resultsVisibility = 'AUTOMATIQUE' AND e.isActive = FALSE THEN TRUE
+                    WHEN e.resultsVisibility = 'MANUEL' AND e.resultsPublished = TRUE THEN TRUE
                     ELSE FALSE
                 END as canDisplayResults
             FROM elections e
