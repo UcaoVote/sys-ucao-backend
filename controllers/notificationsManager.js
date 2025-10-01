@@ -6,18 +6,30 @@ import NotificationService from '../services/notificationService.js';
 
 async function getUnreadNotifications(req, res) {
     try {
-        const userId = req.user.id; // L'ID de l'utilisateur connecté
+        const userId = req.user.id;
 
-        // Récupérer uniquement les notifications non lues de l'utilisateur
-        const unreadNotifications = await Notification.find({
-            user: userId,
-            read: false
-        }).sort({ createdAt: -1 }); // Tri par date décroissante
+        const [rows] = await pool.execute(
+            `SELECT 
+                id, 
+                title, 
+                message, 
+                type, 
+                priority, 
+                is_read AS isRead, 
+                relatedEntity, 
+                entityId, 
+                createdAt, 
+                updatedAt
+             FROM notifications
+             WHERE userId = ? AND is_read = FALSE
+             ORDER BY createdAt DESC`,
+            [userId]
+        );
 
         res.json({
             success: true,
-            notifications: unreadNotifications,
-            count: unreadNotifications.length
+            notifications: rows,
+            count: rows.length
         });
     } catch (error) {
         console.error('Erreur lors de la récupération des notifications non lues:', error);
@@ -26,21 +38,21 @@ async function getUnreadNotifications(req, res) {
             message: 'Erreur serveur lors de la récupération des notifications non lues'
         });
     }
-};
+}
+
 
 async function getUnreadCount(req, res) {
     try {
-        const userId = req.user.id; // L'ID de l'utilisateur connecté
+        const userId = req.user.id;
 
-        // Compter uniquement les notifications non lues de l'utilisateur
-        const unreadCount = await Notification.countDocuments({
-            user: userId,
-            read: false
-        });
+        const [rows] = await pool.execute(
+            'SELECT COUNT(*) AS count FROM notifications WHERE userId = ? AND is_read = FALSE',
+            [userId]
+        );
 
         res.json({
             success: true,
-            count: unreadCount
+            count: rows[0].count
         });
     } catch (error) {
         console.error('Erreur lors du comptage des notifications non lues:', error);
@@ -50,7 +62,8 @@ async function getUnreadCount(req, res) {
             count: 0
         });
     }
-};
+}
+
 
 // Notifications Admin 
 async function getAdminNotifications(req, res) {
