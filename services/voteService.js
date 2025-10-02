@@ -715,7 +715,7 @@ AND (? IS NULL OR rs.ecole = ?)
             }
 
             // Vérifier que l'élection est en mode manuel
-            if (election.resultsVisibility !== 'manuel') {
+            if (election.resultsVisibility !== 'MANUAL') {
                 throw new Error('Cette élection est en mode automatique, la publication manuelle est désactivée');
             }
 
@@ -769,7 +769,7 @@ AND (? IS NULL OR rs.ecole = ?)
             }
 
             // Vérifier que l'élection est en mode manuel (on ne peut masquer que les résultats publiés manuellement)
-            if (election.resultsVisibility !== 'manuel') {
+            if (election.resultsVisibility !== 'MANUAL') {
                 throw new Error('Impossible de masquer les résultats d\'une élection en mode automatique');
             }
 
@@ -818,8 +818,8 @@ AND (? IS NULL OR rs.ecole = ?)
                     ELSE 0 
                 END as tauxParticipation,
                 CASE 
-                    WHEN e.resultsVisibility = 'AUTOMATIQUE' AND e.isActive = FALSE THEN TRUE
-                    WHEN e.resultsVisibility = 'MANUEL' AND e.resultsPublished = TRUE THEN TRUE
+                    WHEN e.resultsVisibility = 'IMMEDIATE' AND e.isActive = FALSE THEN TRUE
+                    WHEN e.resultsVisibility = 'MANUAL' AND e.resultsPublished = TRUE THEN TRUE
                     ELSE FALSE
                 END as canDisplayResults
             FROM elections e
@@ -892,11 +892,11 @@ AND (? IS NULL OR rs.ecole = ?)
                 return false; // Élection toujours active
             }
 
-            if (election.resultsVisibility === 'automatique') {
+            if (election.resultsVisibility === 'IMMEDIATE') {
                 return true; // Automatiquement publiée à la fin
             }
 
-            if (election.resultsVisibility === 'manuel' && election.resultsPublished) {
+            if (election.resultsVisibility === 'MANUEL' && election.resultsPublished) {
                 return true; // Manuellement publiée par l'admin
             }
 
