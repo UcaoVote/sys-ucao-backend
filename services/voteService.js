@@ -1,5 +1,7 @@
 import pool from '../dbconfig.js';
+import crypto from 'crypto';
 import ActivityManager from '../controllers/activityManager.js';
+
 class VoteService {
     async getVoteToken(userId, electionId) {
         let connection;
@@ -7,46 +9,60 @@ class VoteService {
             connection = await pool.getConnection();
             const electionIdInt = parseInt(electionId);
 
-            console.log(`🔍 Vérification de l’éligibilité pour userId=${userId}, electionId=${electionIdInt}`);
+            console.log(`🔍 Vérification de l'éligibilité pour userId=${userId}, electionId=${electionIdInt}`);
 
-            // Vérifier si l’élection est active
+            // Vérifier si l'élection est active
             const [electionRows] = await connection.execute(
                 'SELECT * FROM elections WHERE id = ?',
                 [electionIdInt]
             );
 
-            if (electionRows.length === 0 || !electionRows[0].isActive) {
-                throw new Error("Cette élection n'est pas active");
+            if (electionRows.length === 0) {
+                throw new Error("Élection non trouvée");
             }
 
             const election = electionRows[0];
 
+            if (!election.isActive) {
+                throw new Error("Cette élection n'est pas active");
+            }
+
             // Vérifier le profil étudiant
             const [userRows] = await connection.execute(`
-            SELECT u.*, e.* 
-            FROM users u
-            LEFT JOIN etudiants e ON u.id = e.userId
-            WHERE u.id = ?
-        `, [userId]);
+                SELECT u.*, e.* 
+                FROM users u
+                LEFT JOIN etudiants e ON u.id = e.userId
+                WHERE u.id = ?
+            `, [userId]);
 
-            if (userRows.length === 0 || !userRows[0].id) {
-                throw new Error('Accès refusé - profil étudiant incomplet');
+            if (userRows.length === 0) {
+                throw new Error('Utilisateur non trouvé');
             }
 
             const etudiant = userRows[0];
 
-            // Vérifier l’éligibilité
+            // Vérifier l'éligibilité
             if (!this.isEligibleForElection(etudiant, election)) {
                 throw new Error('Vous n\'êtes pas éligible pour cette élection');
             }
 
-            // Vérifier s’il existe déjà un jeton (même expiré ou utilisé)
+            // Vérifier si l'utilisateur a déjà voté
+            const [voteRows] = await connection.execute(
+                'SELECT * FROM votes WHERE userId = ? AND electionId = ?',
+                [userId, electionIdInt]
+            );
+
+            if (voteRows.length > 0) {
+                throw new Error('Vous avez déjà voté pour cette élection');
+            }
+
+            // Vérifier s'il existe déjà un jeton
             const [existingRows] = await connection.execute(`
-            SELECT * FROM vote_tokens 
-            WHERE userId = ? AND electionId = ?
-            ORDER BY createdAt DESC
-            LIMIT 1
-        `, [userId, electionIdInt]);
+                SELECT * FROM vote_tokens 
+                WHERE userId = ? AND electionId = ?
+                ORDER BY createdAt DESC
+                LIMIT 1
+            `, [userId, electionIdInt]);
 
             let voteToken;
 
@@ -63,10 +79,10 @@ class VoteService {
                     // Mettre à jour le jeton existant
                     const newToken = crypto.randomUUID();
                     await connection.execute(`
-                    UPDATE vote_tokens
-                    SET token = ?, isUsed = FALSE, expiresAt = DATE_ADD(NOW(), INTERVAL 1 HOUR), createdAt = NOW()
-                    WHERE id = ?
-                `, [newToken, existing.id]);
+                        UPDATE vote_tokens
+                        SET token = ?, isUsed = FALSE, expiresAt = DATE_ADD(NOW(), INTERVAL 1 HOUR), createdAt = NOW()
+                        WHERE id = ?
+                    `, [newToken, existing.id]);
 
                     const [updatedRows] = await connection.execute(
                         'SELECT * FROM vote_tokens WHERE id = ?',
@@ -77,12 +93,12 @@ class VoteService {
                     console.log(`✅ Jeton régénéré: ${voteToken.token}`);
                 }
             } else {
-                console.log(`🆕 Aucun jeton trouvé, insertion d’un nouveau...`);
+                console.log(`🆕 Aucun jeton trouvé, insertion d'un nouveau...`);
 
                 const [insertResult] = await connection.execute(`
-                INSERT INTO vote_tokens (userId, electionId, token, isUsed, expiresAt, createdAt)
-                VALUES (?, ?, UUID(), FALSE, DATE_ADD(NOW(), INTERVAL 1 HOUR), NOW())
-            `, [userId, electionIdInt]);
+                    INSERT INTO vote_tokens (userId, electionId, token, isUsed, expiresAt, createdAt)
+                    VALUES (?, ?, UUID(), FALSE, DATE_ADD(NOW(), INTERVAL 1 HOUR), NOW())
+                `, [userId, electionIdInt]);
 
                 const [newTokenRows] = await connection.execute(
                     'SELECT * FROM vote_tokens WHERE id = ?',
@@ -111,7 +127,6 @@ class VoteService {
         }
     }
 
-
     async submitVote(voteData, userId) {
         let connection;
         try {
@@ -119,6 +134,7 @@ class VoteService {
 
             const { electionId, candidateId, voteToken } = voteData;
 
+            // Valider le jeton de vote
             const [tokenRows] = await connection.execute(`
                 SELECT * FROM vote_tokens 
                 WHERE token = ? AND electionId = ? AND isUsed = FALSE AND expiresAt > NOW()
@@ -134,6 +150,7 @@ class VoteService {
                 throw new Error('Jeton de vote non autorisé');
             }
 
+            // Vérifier l'élection
             const [electionRows] = await connection.execute(
                 'SELECT * FROM elections WHERE id = ?',
                 [parseInt(electionId)]
@@ -143,8 +160,7 @@ class VoteService {
                 throw new Error("Cette élection n'est pas active");
             }
 
-            const election = electionRows[0];
-
+            // Vérifier si l'utilisateur a déjà voté
             const [voteRows] = await connection.execute(`
                 SELECT * FROM votes 
                 WHERE userId = ? AND electionId = ?
@@ -154,6 +170,7 @@ class VoteService {
                 throw new Error('Vous avez déjà voté pour cette élection');
             }
 
+            // Vérifier le candidat
             const [candidateRows] = await connection.execute(
                 'SELECT * FROM candidates WHERE id = ? AND electionId = ?',
                 [parseInt(candidateId), parseInt(electionId)]
@@ -163,19 +180,31 @@ class VoteService {
                 throw new Error('Candidat invalide pour cette élection');
             }
 
+            // Calculer le poids du vote
+            const election = electionRows[0];
             const poidsVote = await this.calculateVoteWeight(connection, userId, election);
 
+            // Enregistrer le vote
             await connection.execute(`
                 INSERT INTO votes (userId, electionId, candidateId, poidsVote, createdAt)
                 VALUES (?, ?, ?, ?, NOW())
             `, [userId, parseInt(electionId), parseInt(candidateId), poidsVote]);
 
+            // Marquer le jeton comme utilisé
             await connection.execute(
                 'UPDATE vote_tokens SET isUsed = TRUE, usedAt = NOW() WHERE id = ?',
                 [validatedToken.id]
             );
 
-            return true;
+            return {
+                success: true,
+                message: 'Vote enregistré avec succès',
+                poidsVote: poidsVote
+            };
+
+        } catch (error) {
+            console.error('❌ Erreur dans submitVote:', error.message);
+            throw error;
         } finally {
             if (connection) await connection.release();
         }
@@ -183,7 +212,6 @@ class VoteService {
 
     async calculateVoteWeight(connection, userId, election) {
         try {
-            // Normalisation des champs potentiellement undefined
             const filiereId = election.filiereId ?? null;
             const annee = election.annee ?? null;
             const ecoleId = election.ecoleId ?? null;
@@ -198,24 +226,24 @@ class VoteService {
 
             if (election.type === 'ECOLE') {
                 const [responsableRows] = await connection.execute(`
-                SELECT rs.* 
-                FROM responsables_salle rs
-                INNER JOIN etudiants e ON rs.etudiantId = e.id
-                WHERE e.userId = ? 
-                AND rs.ecole = ?
-            `, [userId, ecoleId]);
+                    SELECT rs.* 
+                    FROM responsables_salle rs
+                    INNER JOIN etudiants e ON rs.etudiantId = e.id
+                    WHERE e.userId = ? 
+                    AND rs.ecoleId = ?
+                `, [userId, ecoleId]);
 
                 return responsableRows.length > 0 ? 1.5 : 1.0;
             } else {
                 const [responsableRows] = await connection.execute(`
-                SELECT rs.* 
-                FROM responsables_salle rs
-                INNER JOIN etudiants e ON rs.etudiantId = e.id
-                WHERE e.userId = ? 
-                AND (? IS NULL OR rs.filiereId = ?)
-                AND (? IS NULL OR rs.annee = ?)
-                AND (? IS NULL OR rs.ecoleId = ?)
-            `, [
+                    SELECT rs.* 
+                    FROM responsables_salle rs
+                    INNER JOIN etudiants e ON rs.etudiantId = e.id
+                    WHERE e.userId = ? 
+                    AND (? IS NULL OR rs.filiereId = ?)
+                    AND (? IS NULL OR rs.annee = ?)
+                    AND (? IS NULL OR rs.ecoleId = ?)
+                `, [
                     userId,
                     filiereId, filiereId,
                     annee, annee,
@@ -230,7 +258,6 @@ class VoteService {
             return 1.0;
         }
     }
-
 
     async getElectionResults(electionId) {
         let connection;
@@ -254,70 +281,82 @@ class VoteService {
             }
 
             // Pour les autres types d'élection, utiliser le calcul normal
-            const [candidateRows] = await connection.execute(`
-                SELECT c.*, u.email, e.nom, e.prenom
-                FROM candidates c
-                LEFT JOIN users u ON c.userId = u.id
-                LEFT JOIN etudiants e ON u.id = e.userId
-                WHERE c.electionId = ?
-            `, [parseInt(electionId)]);
+            return await this.calculateNormalElectionResults(connection, election);
 
-            const [voteRows] = await connection.execute(`
-                SELECT v.*, u.email, e.nom, e.prenom
-                FROM votes v
-                LEFT JOIN users u ON v.userId = u.id
-                LEFT JOIN etudiants e ON u.id = e.userId
-                WHERE v.electionId = ?
-            `, [parseInt(electionId)]);
-
-            const [tokenCountRows] = await connection.execute(
-                'SELECT COUNT(*) as count FROM vote_tokens WHERE electionId = ?',
-                [parseInt(electionId)]
-            );
-
-            const totalInscrits = tokenCountRows[0].count;
-
-            const resultats = candidateRows.map(candidate => {
-                const votes = voteRows.filter(vote => vote.candidateId === candidate.id);
-                const scorePondere = votes.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
-                const totalPoids = voteRows.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
-                const pourcentage = totalPoids > 0 ? (scorePondere / totalPoids) * 100 : 0;
-
-                return {
-                    candidateId: candidate.id,
-                    nom: candidate.nom,
-                    prenom: candidate.prenom,
-                    scoreFinal: parseFloat(pourcentage.toFixed(2)),
-                    details: {
-                        totalVotes: votes.length,
-                        scorePondere: parseFloat(scorePondere.toFixed(2)),
-                        poidsMoyen: votes.length > 0 ? parseFloat((scorePondere / votes.length).toFixed(2)) : 0
-                    }
-                };
-            });
-
-            resultats.sort((a, b) => b.scoreFinal - a.scoreFinal);
-
-            return {
-                election: election,
-                statistiques: {
-                    totalVotes: voteRows.length,
-                    totalPoids: voteRows.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0),
-                    totalInscrits: totalInscrits,
-                    tauxParticipation: totalInscrits > 0
-                        ? parseFloat(((voteRows.length / totalInscrits) * 100).toFixed(2))
-                        : 0
-                },
-                resultats: resultats
-            };
+        } catch (error) {
+            console.error('❌ Erreur dans getElectionResults:', error.message);
+            throw error;
         } finally {
             if (connection) await connection.release();
         }
     }
 
-    async calculateSchoolElectionResults(connection, election) {
+    async calculateNormalElectionResults(connection, election) {
         const [candidateRows] = await connection.execute(`
             SELECT c.*, u.email, e.nom, e.prenom
+            FROM candidates c
+            LEFT JOIN users u ON c.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            WHERE c.electionId = ?
+        `, [election.id]);
+
+        const [voteRows] = await connection.execute(`
+            SELECT v.*, u.email, e.nom, e.prenom
+            FROM votes v
+            LEFT JOIN users u ON v.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            WHERE v.electionId = ?
+        `, [election.id]);
+
+        const [tokenCountRows] = await connection.execute(
+            'SELECT COUNT(*) as count FROM vote_tokens WHERE electionId = ?',
+            [election.id]
+        );
+
+        const totalInscrits = tokenCountRows[0].count;
+
+        const resultats = candidateRows.map(candidate => {
+            const votes = voteRows.filter(vote => vote.candidateId === candidate.id);
+            const scorePondere = votes.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
+            const totalPoids = voteRows.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
+            const pourcentage = totalPoids > 0 ? (scorePondere / totalPoids) * 100 : 0;
+
+            return {
+                candidateId: candidate.id,
+                nom: candidate.nom,
+                prenom: candidate.prenom,
+                photoUrl: candidate.photoUrl,
+                filiere: candidate.filiere,
+                annee: candidate.annee,
+                slogan: candidate.slogan,
+                scoreFinal: parseFloat(pourcentage.toFixed(2)),
+                details: {
+                    totalVotes: votes.length,
+                    scorePondere: parseFloat(scorePondere.toFixed(2)),
+                    poidsMoyen: votes.length > 0 ? parseFloat((scorePondere / votes.length).toFixed(2)) : 0
+                }
+            };
+        });
+
+        resultats.sort((a, b) => b.scoreFinal - a.scoreFinal);
+
+        return {
+            election: election,
+            statistiques: {
+                totalVotes: voteRows.length,
+                totalPoids: voteRows.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0),
+                totalInscrits: totalInscrits,
+                tauxParticipation: totalInscrits > 0
+                    ? parseFloat(((voteRows.length / totalInscrits) * 100).toFixed(2))
+                    : 0
+            },
+            resultats: resultats
+        };
+    }
+
+    async calculateSchoolElectionResults(connection, election) {
+        const [candidateRows] = await connection.execute(`
+            SELECT c.*, u.email, e.nom, e.prenom, e.filiere, e.annee
             FROM candidates c
             LEFT JOIN users u ON c.userId = u.id
             LEFT JOIN etudiants e ON u.id = e.userId
@@ -335,18 +374,9 @@ class VoteService {
             LEFT JOIN users u ON v.userId = u.id
             LEFT JOIN etudiants e ON u.id = e.userId
             LEFT JOIN responsables_salle rs ON e.id = rs.etudiantId
-                AND (? IS NULL OR rs.filiereId = ?)
-                AND (? IS NULL OR rs.annee = ?)
-                AND (? IS NULL OR rs.ecoleId = ?)
-
+                AND rs.ecoleId = ?
             WHERE v.electionId = ?
-        `, [
-            election.filiereId, election.filiereId,
-            election.annee, election.annee,
-            election.ecoleId, election.ecoleId,
-            election.id
-        ]
-        );
+        `, [election.ecoleId, election.id]);
 
         const [tokenCountRows] = await connection.execute(
             'SELECT COUNT(*) as count FROM vote_tokens WHERE electionId = ?',
@@ -380,6 +410,10 @@ class VoteService {
                 candidateId: candidate.id,
                 nom: candidate.nom,
                 prenom: candidate.prenom,
+                photoUrl: candidate.photoUrl,
+                filiere: candidate.filiere,
+                annee: candidate.annee,
+                slogan: candidate.slogan,
                 scoreFinal: parseFloat(pourcentage.toFixed(2)),
                 details: {
                     totalVotes: nombreVotesRespo + nombreVotesEtud,
@@ -432,100 +466,20 @@ class VoteService {
                 return await this.calculateDetailedSchoolResults(connection, election);
             }
 
-            // Pour les autres types d'élection, utiliser le calcul normal
-            const [candidateRows] = await connection.execute(`
-                SELECT c.*, u.email, e.nom, e.prenom
-                FROM candidates c
-                LEFT JOIN users u ON c.userId = u.id
-                LEFT JOIN etudiants e ON u.id = e.userId
-                WHERE c.electionId = ?
-            `, [parseInt(electionId)]);
+            // Pour les autres types d'élection, utiliser le calcul normal détaillé
+            return await this.calculateDetailedNormalResults(connection, election);
 
-            const [voteRows] = await connection.execute(`
-                SELECT 
-                    v.*, 
-                    u.email,
-                    e.nom,
-                    e.prenom,
-                    CASE WHEN rs.id IS NOT NULL THEN TRUE ELSE FALSE END as is_responsable
-                FROM votes v
-                LEFT JOIN users u ON v.userId = u.id
-                LEFT JOIN etudiants e ON u.id = e.userId
-                LEFT JOIN responsables_salle rs ON e.id = rs.etudiantId
-                    AND (? IS NULL OR rs.filiereId = ?)
-AND (? IS NULL OR rs.annee = ?)
-AND (? IS NULL OR rs.ecoleId = ?)
-
-                WHERE v.electionId = ?
-            `, [
-                election.filiereId, election.filiereId,
-                election.annee, election.annee,
-                election.ecoleId, election.ecoleId,
-                parseInt(electionId)
-            ]
-            );
-
-            const [tokenCountRows] = await connection.execute(
-                'SELECT COUNT(*) as count FROM vote_tokens WHERE electionId = ?',
-                [parseInt(electionId)]
-            );
-
-            const totalInscrits = tokenCountRows[0].count;
-
-            const votesResponsables = voteRows.filter(vote => vote.is_responsable);
-            const votesEtudiants = voteRows.filter(vote => !vote.is_responsable);
-
-            const resultats = candidateRows.map(candidate => {
-                const votesRespo = votesResponsables.filter(vote => vote.candidateId === candidate.id);
-                const votesEtud = votesEtudiants.filter(vote => vote.candidateId === candidate.id);
-
-                const scoreRespo = votesRespo.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
-                const scoreEtud = votesEtud.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
-
-                const totalVotes = votesRespo.length + votesEtud.length;
-                const scorePondere = scoreRespo + scoreEtud;
-                const totalPoids = voteRows.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
-                const pourcentage = totalPoids > 0 ? (scorePondere / totalPoids) * 100 : 0;
-
-                return {
-                    candidateId: candidate.id,
-                    nom: candidate.nom,
-                    prenom: candidate.prenom,
-                    scoreFinal: parseFloat(pourcentage.toFixed(2)),
-                    details: {
-                        votesResponsables: votesRespo.length,
-                        votesEtudiants: votesEtud.length,
-                        totalVotes: totalVotes,
-                        scorePondere: parseFloat(scorePondere.toFixed(2)),
-                        poidsMoyen: totalVotes > 0 ? parseFloat((scorePondere / totalVotes).toFixed(2)) : 0
-                    }
-                };
-            });
-
-            resultats.sort((a, b) => b.scoreFinal - a.scoreFinal);
-
-            return {
-                election: election,
-                statistiques: {
-                    totalVotes: voteRows.length,
-                    votesResponsables: votesResponsables.length,
-                    votesEtudiants: votesEtudiants.length,
-                    totalPoids: voteRows.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0),
-                    totalInscrits: totalInscrits,
-                    tauxParticipation: totalInscrits > 0
-                        ? parseFloat(((voteRows.length / totalInscrits) * 100).toFixed(2))
-                        : 0
-                },
-                resultats: resultats
-            };
+        } catch (error) {
+            console.error('❌ Erreur dans getDetailedResults:', error.message);
+            throw error;
         } finally {
             if (connection) await connection.release();
         }
     }
 
-    async calculateDetailedSchoolResults(connection, election) {
+    async calculateDetailedNormalResults(connection, election) {
         const [candidateRows] = await connection.execute(`
-            SELECT c.*, u.email, e.nom, e.prenom
+            SELECT c.*, u.email, e.nom, e.prenom, e.filiere, e.annee
             FROM candidates c
             LEFT JOIN users u ON c.userId = u.id
             LEFT JOIN etudiants e ON u.id = e.userId
@@ -543,18 +497,99 @@ AND (? IS NULL OR rs.ecoleId = ?)
             LEFT JOIN users u ON v.userId = u.id
             LEFT JOIN etudiants e ON u.id = e.userId
             LEFT JOIN responsables_salle rs ON e.id = rs.etudiantId
-                AND (? IS NULL OR rs.filiere = ?)
-AND (? IS NULL OR rs.annee = ?)
-AND (? IS NULL OR rs.ecole = ?)
-
+                AND (? IS NULL OR rs.filiereId = ?)
+                AND (? IS NULL OR rs.annee = ?)
+                AND (? IS NULL OR rs.ecoleId = ?)
             WHERE v.electionId = ?
         `, [
             election.filiereId, election.filiereId,
             election.annee, election.annee,
             election.ecoleId, election.ecoleId,
             election.id
-        ]
+        ]);
+
+        const [tokenCountRows] = await connection.execute(
+            'SELECT COUNT(*) as count FROM vote_tokens WHERE electionId = ?',
+            [election.id]
         );
+
+        const totalInscrits = tokenCountRows[0].count;
+
+        const votesResponsables = voteRows.filter(vote => vote.is_responsable);
+        const votesEtudiants = voteRows.filter(vote => !vote.is_responsable);
+
+        const resultats = candidateRows.map(candidate => {
+            const votesRespo = votesResponsables.filter(vote => vote.candidateId === candidate.id);
+            const votesEtud = votesEtudiants.filter(vote => vote.candidateId === candidate.id);
+
+            const scoreRespo = votesRespo.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
+            const scoreEtud = votesEtud.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
+
+            const totalVotes = votesRespo.length + votesEtud.length;
+            const scorePondere = scoreRespo + scoreEtud;
+            const totalPoids = voteRows.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0);
+            const pourcentage = totalPoids > 0 ? (scorePondere / totalPoids) * 100 : 0;
+
+            return {
+                candidateId: candidate.id,
+                nom: candidate.nom,
+                prenom: candidate.prenom,
+                photoUrl: candidate.photoUrl,
+                filiere: candidate.filiere,
+                annee: candidate.annee,
+                slogan: candidate.slogan,
+                scoreFinal: parseFloat(pourcentage.toFixed(2)),
+                details: {
+                    votesResponsables: votesRespo.length,
+                    votesEtudiants: votesEtud.length,
+                    totalVotes: totalVotes,
+                    scorePondere: parseFloat(scorePondere.toFixed(2)),
+                    poidsMoyen: totalVotes > 0 ? parseFloat((scorePondere / totalVotes).toFixed(2)) : 0
+                }
+            };
+        });
+
+        resultats.sort((a, b) => b.scoreFinal - a.scoreFinal);
+
+        return {
+            election: election,
+            statistiques: {
+                totalVotes: voteRows.length,
+                votesResponsables: votesResponsables.length,
+                votesEtudiants: votesEtudiants.length,
+                totalPoids: voteRows.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0),
+                totalInscrits: totalInscrits,
+                tauxParticipation: totalInscrits > 0
+                    ? parseFloat(((voteRows.length / totalInscrits) * 100).toFixed(2))
+                    : 0
+            },
+            resultats: resultats
+        };
+    }
+
+    async calculateDetailedSchoolResults(connection, election) {
+        const [candidateRows] = await connection.execute(`
+            SELECT c.*, u.email, e.nom, e.prenom, e.filiere, e.annee
+            FROM candidates c
+            LEFT JOIN users u ON c.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            WHERE c.electionId = ?
+        `, [election.id]);
+
+        const [voteRows] = await connection.execute(`
+            SELECT 
+                v.*, 
+                u.email,
+                e.nom,
+                e.prenom,
+                CASE WHEN rs.id IS NOT NULL THEN TRUE ELSE FALSE END as is_responsable
+            FROM votes v
+            LEFT JOIN users u ON v.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            LEFT JOIN responsables_salle rs ON e.id = rs.etudiantId
+                AND rs.ecoleId = ?
+            WHERE v.electionId = ?
+        `, [election.ecoleId, election.id]);
 
         const [tokenCountRows] = await connection.execute(
             'SELECT COUNT(*) as count FROM vote_tokens WHERE electionId = ?',
@@ -587,6 +622,10 @@ AND (? IS NULL OR rs.ecole = ?)
                 candidateId: candidate.id,
                 nom: candidate.nom,
                 prenom: candidate.prenom,
+                photoUrl: candidate.photoUrl,
+                filiere: candidate.filiere,
+                annee: candidate.annee,
+                slogan: candidate.slogan,
                 scoreFinal: parseFloat(pourcentage.toFixed(2)),
                 details: {
                     votesResponsables: nombreVotesRespo,
@@ -632,6 +671,9 @@ AND (? IS NULL OR rs.ecole = ?)
                 hasVoted: voteRows.length > 0,
                 electionId: parseInt(electionId)
             };
+        } catch (error) {
+            console.error('❌ Erreur dans getVoteStatus:', error.message);
+            throw error;
         } finally {
             if (connection) await connection.release();
         }
@@ -659,6 +701,9 @@ AND (? IS NULL OR rs.ecole = ?)
                 valid: true,
                 expiresAt: tokenRows[0].expiresAt
             };
+        } catch (error) {
+            console.error('❌ Erreur dans validateToken:', error.message);
+            throw error;
         } finally {
             if (connection) await connection.release();
         }
@@ -687,8 +732,7 @@ AND (? IS NULL OR rs.ecole = ?)
         return false;
     }
 
-
-    async publishResults(electionId) {
+    async publishResults(electionId, userId) {
         let connection;
         try {
             connection = await pool.getConnection();
@@ -750,11 +794,15 @@ AND (? IS NULL OR rs.ecole = ?)
                 }
             };
 
+        } catch (error) {
+            console.error('❌ Erreur dans publishResults:', error.message);
+            throw error;
         } finally {
             if (connection) await connection.release();
         }
     }
-    async unpublishResults(electionId) {
+
+    async unpublishResults(electionId, userId) {
         let connection;
         try {
             connection = await pool.getConnection();
@@ -774,7 +822,7 @@ AND (? IS NULL OR rs.ecole = ?)
                 throw new Error('Les résultats de cette élection ne sont pas publiés');
             }
 
-            // Vérifier que l'élection est en mode manuel (on ne peut masquer que les résultats publiés manuellement)
+            // Vérifier que l'élection est en mode manuel
             if (election.resultsVisibility !== 'MANUAL') {
                 throw new Error('Impossible de masquer les résultats d\'une élection en mode automatique');
             }
@@ -786,7 +834,7 @@ AND (? IS NULL OR rs.ecole = ?)
 
             await ActivityManager.createActivityLog({
                 action: 'Résultats masqués',
-                userId: null,
+                userId: userId,
                 details: `Masquage des résultats de l'élection: ${election.titre}`,
                 actionType: 'PUBLICATION',
                 module: 'ELECTION'
@@ -804,67 +852,75 @@ AND (? IS NULL OR rs.ecole = ?)
                 }
             };
 
+        } catch (error) {
+            console.error('❌ Erreur dans unpublishResults:', error.message);
+            throw error;
         } finally {
             if (connection) await connection.release();
         }
     }
+
     async getCompletedElections() {
         let connection;
         try {
             connection = await pool.getConnection();
 
             const [elections] = await connection.execute(`
-            SELECT 
-                e.*,
-                COUNT(DISTINCT vt.id) as totalInscrits,
-                COUNT(DISTINCT v.id) as totalVotes,
-                CASE 
-                    WHEN COUNT(DISTINCT vt.id) > 0 
-                    THEN ROUND((COUNT(DISTINCT v.id) * 100.0 / COUNT(DISTINCT vt.id)), 2)
-                    ELSE 0 
-                END as tauxParticipation,
-                CASE 
-                    WHEN e.resultsVisibility = 'IMMEDIATE' AND e.isActive = FALSE THEN TRUE
-                    WHEN e.resultsVisibility = 'MANUAL' AND e.resultsPublished = TRUE THEN TRUE
-                    ELSE FALSE
-                END as canDisplayResults
-            FROM elections e
-            LEFT JOIN vote_tokens vt ON e.id = vt.electionId
-            LEFT JOIN votes v ON e.id = v.electionId
-            WHERE e.isActive = FALSE
-            GROUP BY e.id
-            ORDER BY e.dateFin DESC
-        `);
+                SELECT 
+                    e.*,
+                    COUNT(DISTINCT vt.id) as totalInscrits,
+                    COUNT(DISTINCT v.id) as totalVotes,
+                    CASE 
+                        WHEN COUNT(DISTINCT vt.id) > 0 
+                        THEN ROUND((COUNT(DISTINCT v.id) * 100.0 / COUNT(DISTINCT vt.id)), 2)
+                        ELSE 0 
+                    END as tauxParticipation,
+                    CASE 
+                        WHEN e.resultsVisibility = 'IMMEDIATE' AND e.isActive = FALSE THEN TRUE
+                        WHEN e.resultsVisibility = 'MANUAL' AND e.resultsPublished = TRUE THEN TRUE
+                        ELSE FALSE
+                    END as canDisplayResults
+                FROM elections e
+                LEFT JOIN vote_tokens vt ON e.id = vt.electionId
+                LEFT JOIN votes v ON e.id = v.electionId
+                WHERE e.isActive = FALSE
+                GROUP BY e.id
+                ORDER BY e.dateFin DESC
+            `);
 
             return elections;
 
+        } catch (error) {
+            console.error('❌ Erreur dans getCompletedElections:', error.message);
+            throw error;
         } finally {
             if (connection) await connection.release();
         }
     }
+
     async getElectionStats(electionId) {
         let connection;
         try {
             connection = await pool.getConnection();
 
             const [stats] = await connection.execute(`
-            SELECT 
-                e.*,
-                COUNT(DISTINCT vt.id) as totalInscrits,
-                COUNT(DISTINCT v.id) as totalVotes,
-                COUNT(DISTINCT c.id) as totalCandidats,
-                CASE 
-                    WHEN COUNT(DISTINCT vt.id) > 0 
-                    THEN ROUND((COUNT(DISTINCT v.id) * 100.0 / COUNT(DISTINCT vt.id)), 2)
-                    ELSE 0 
-                END as tauxParticipation
-            FROM elections e
-            LEFT JOIN vote_tokens vt ON e.id = vt.electionId
-            LEFT JOIN votes v ON e.id = v.electionId
-            LEFT JOIN candidates c ON e.id = c.electionId
-            WHERE e.id = ?
-            GROUP BY e.id
-        `, [parseInt(electionId)]);
+                SELECT 
+                    e.*,
+                    COUNT(DISTINCT vt.id) as totalInscrits,
+                    COUNT(DISTINCT v.id) as totalVotes,
+                    COUNT(DISTINCT c.id) as totalCandidats,
+                    CASE 
+                        WHEN COUNT(DISTINCT vt.id) > 0 
+                        THEN ROUND((COUNT(DISTINCT v.id) * 100.0 / COUNT(DISTINCT vt.id)), 2)
+                        ELSE 0 
+                    END as tauxParticipation
+                FROM elections e
+                LEFT JOIN vote_tokens vt ON e.id = vt.electionId
+                LEFT JOIN votes v ON e.id = v.electionId
+                LEFT JOIN candidates c ON e.id = c.electionId
+                WHERE e.id = ?
+                GROUP BY e.id
+            `, [parseInt(electionId)]);
 
             if (stats.length === 0) {
                 throw new Error('Élection non trouvée');
@@ -872,6 +928,9 @@ AND (? IS NULL OR rs.ecole = ?)
 
             return stats[0];
 
+        } catch (error) {
+            console.error('❌ Erreur dans getElectionStats:', error.message);
+            throw error;
         } finally {
             if (connection) await connection.release();
         }
@@ -902,18 +961,20 @@ AND (? IS NULL OR rs.ecole = ?)
                 return true;
             }
 
-            if (election.resultsVisibility === 'MANUEL' && election.resultsPublished) {
+            if (election.resultsVisibility === 'MANUAL' && election.resultsPublished) {
                 return true;
             }
 
             return false;
 
+        } catch (error) {
+            console.error('❌ Erreur dans canDisplayResults:', error.message);
+            throw error;
         } finally {
             if (connection) await connection.release();
         }
     }
 
-    // Méthode pour publier automatiquement les élections terminées en mode automatique
     async publishAutomaticElections() {
         let connection;
         try {
@@ -921,18 +982,20 @@ AND (? IS NULL OR rs.ecole = ?)
 
             // Publier automatiquement les élections terminées en mode automatique
             const [result] = await connection.execute(`
-            UPDATE elections 
-            SET resultsPublished = TRUE, publishedAt = NOW()
-            WHERE isActive = FALSE 
-            AND resultsVisibility = 'automatique'
-            AND resultsPublished = FALSE
-            AND dateFin < NOW()
-        `);
+                UPDATE elections 
+                SET resultsPublished = TRUE, publishedAt = NOW()
+                WHERE isActive = FALSE 
+                AND resultsVisibility = 'IMMEDIATE'
+                AND resultsPublished = FALSE
+                AND dateFin < NOW()
+            `);
 
             if (result.affectedRows > 0) {
                 console.log(`📢 ${result.affectedRows} élection(s) publiée(s) automatiquement`);
             }
 
+        } catch (error) {
+            console.error('❌ Erreur dans publishAutomaticElections:', error.message);
         } finally {
             if (connection) await connection.release();
         }

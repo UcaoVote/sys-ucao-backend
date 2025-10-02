@@ -16,7 +16,8 @@ class VoteController {
 
             if (error.message.includes('non active') ||
                 error.message.includes('éligible') ||
-                error.message.includes('profil étudiant')) {
+                error.message.includes('profil étudiant') ||
+                error.message.includes('déjà voté')) {
                 return res.status(400).json({
                     success: false,
                     message: error.message
@@ -45,21 +46,18 @@ class VoteController {
             }
 
             // Enregistrement du vote
-            await voteService.submitVote({ electionId, candidateId, voteToken }, userId);
+            const result = await voteService.submitVote({ electionId, candidateId, voteToken }, userId);
 
-            // Journal d’activité
+            // Journal d'activité
             await ActivityManager.createActivityLog({
                 action: 'Vote enregistré',
                 userId,
-                details: `Vote pour le candidat ${candidateId} dans l’élection ${electionId}`,
+                details: `Vote pour le candidat ${candidateId} dans l'élection ${electionId}`,
                 actionType: 'VOTE',
                 module: 'ELECTION'
             });
 
-            return res.status(200).json({
-                success: true,
-                message: 'Vote enregistré avec succès'
-            });
+            return res.status(200).json(result);
 
         } catch (error) {
             console.error('Erreur enregistrement vote:', error);
@@ -69,7 +67,8 @@ class VoteController {
                 'non autorisé',
                 'déjà voté',
                 'non active',
-                'Candidat invalide'
+                'Candidat invalide',
+                'Jeton de vote'
             ];
 
             const isClientError = clientErrors.some(msg => error.message.includes(msg));
@@ -81,7 +80,6 @@ class VoteController {
             });
         }
     }
-
 
     async getStudentResults(req, res) {
         try {
@@ -100,7 +98,7 @@ class VoteController {
             const fullResults = await voteService.getElectionResults(electionId);
 
             // Transformer pour le frontend étudiant
-            const studentResults = transformForStudent(fullResults);
+            const studentResults = this.transformForStudent(fullResults);
 
             res.json({
                 success: true,
@@ -111,6 +109,13 @@ class VoteController {
 
             if (error.message === 'Élection non trouvée') {
                 return res.status(404).json({
+                    success: false,
+                    message: error.message
+                });
+            }
+
+            if (error.message.includes('non disponibles')) {
+                return res.status(403).json({
                     success: false,
                     message: error.message
                 });
@@ -240,11 +245,11 @@ class VoteController {
         }
     }
 
-
     async publishResults(req, res) {
         try {
             const { electionId } = req.params;
-            const result = await voteService.publishResults(electionId);
+            const userId = req.user.id;
+            const result = await voteService.publishResults(electionId, userId);
 
             res.json({
                 success: true,
@@ -255,7 +260,8 @@ class VoteController {
 
             if (error.message.includes('non trouvée') ||
                 error.message.includes('active') ||
-                error.message.includes('déjà publiés')) {
+                error.message.includes('déjà publiés') ||
+                error.message.includes('automatique')) {
                 return res.status(400).json({
                     success: false,
                     message: error.message
@@ -272,7 +278,8 @@ class VoteController {
     async unpublishResults(req, res) {
         try {
             const { electionId } = req.params;
-            const result = await voteService.unpublishResults(electionId);
+            const userId = req.user.id;
+            const result = await voteService.unpublishResults(electionId, userId);
 
             res.json({
                 success: true,
@@ -282,7 +289,8 @@ class VoteController {
             console.error('Erreur masquage résultats:', error);
 
             if (error.message.includes('non trouvée') ||
-                error.message.includes('ne sont pas publiés')) {
+                error.message.includes('ne sont pas publiés') ||
+                error.message.includes('automatique')) {
                 return res.status(400).json({
                     success: false,
                     message: error.message
@@ -359,31 +367,32 @@ class VoteController {
         }
     }
 
-}
+    transformForStudent(fullResults) {
+        if (!fullResults || !fullResults.resultats) return fullResults;
 
-function transformForStudent(fullResults) {
-    return {
-        election: fullResults.election,
-        statistiques: {
-            totalVotes: fullResults.statistiques.totalVotes,
-            totalInscrits: fullResults.statistiques.totalInscrits,
-            tauxParticipation: fullResults.statistiques.tauxParticipation,
-            nombreCandidats: fullResults.resultats.length
-        },
-        resultats: fullResults.resultats.map(candidate => ({
-            id: candidate.candidateId, // Transformation de candidateId → id
-            nom: candidate.nom,
-            prenom: candidate.prenom,
-            photoUrl: candidate.photoUrl,
-            filiere: candidate.filiere || 'Non spécifié',
-            annee: candidate.annee || 'N/A',
-            slogan: candidate.slogan || 'Aucun slogan',
-            scoreFinal: candidate.scoreFinal,
-            details: {
-                totalVotes: candidate.details.totalVotes
-            }
-        }))
-    };
+        return {
+            election: fullResults.election,
+            statistiques: {
+                totalVotes: fullResults.statistiques.totalVotes,
+                totalInscrits: fullResults.statistiques.totalInscrits,
+                tauxParticipation: fullResults.statistiques.tauxParticipation,
+                nombreCandidats: fullResults.resultats.length
+            },
+            resultats: fullResults.resultats.map(candidate => ({
+                id: candidate.candidateId,
+                nom: candidate.nom,
+                prenom: candidate.prenom,
+                photoUrl: candidate.photoUrl,
+                filiere: candidate.filiere || 'Non spécifié',
+                annee: candidate.annee || 'N/A',
+                slogan: candidate.slogan || 'Aucun slogan',
+                scoreFinal: candidate.scoreFinal,
+                details: {
+                    totalVotes: candidate.details.totalVotes
+                }
+            }))
+        };
+    }
 }
 
 export default new VoteController();
