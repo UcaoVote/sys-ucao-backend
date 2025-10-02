@@ -704,6 +704,12 @@ AND (? IS NULL OR rs.ecole = ?)
 
             const election = electionRows[0];
 
+            console.log('État publication:', {
+                isActive: election.isActive,
+                visibility: election.resultsVisibility,
+                published: election.resultsPublished
+            });
+
             // Vérifier si l'élection est terminée
             if (election.isActive) {
                 throw new Error('Impossible de publier les résultats d\'une élection active');
@@ -726,7 +732,7 @@ AND (? IS NULL OR rs.ecole = ?)
 
             await ActivityManager.createActivityLog({
                 action: 'Résultats publiés manuellement',
-                userId: null,
+                userId: userId,
                 details: `Publication manuelle des résultats de l'élection: ${election.titre}`,
                 actionType: 'PUBLICATION',
                 module: 'ELECTION'
@@ -893,14 +899,14 @@ AND (? IS NULL OR rs.ecole = ?)
             }
 
             if (election.resultsVisibility === 'IMMEDIATE') {
-                return true; // Automatiquement publiée à la fin
+                return true;
             }
 
             if (election.resultsVisibility === 'MANUEL' && election.resultsPublished) {
-                return true; // Manuellement publiée par l'admin
+                return true;
             }
 
-            return false; // Non publiée
+            return false;
 
         } finally {
             if (connection) await connection.release();
