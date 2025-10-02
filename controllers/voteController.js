@@ -83,6 +83,46 @@ class VoteController {
     }
 
 
+    async getStudentResults(req, res) {
+        try {
+            const { electionId } = req.params;
+
+            // Vérifier si les résultats peuvent être affichés aux étudiants
+            const canDisplay = await voteService.canDisplayResults(electionId);
+            if (!canDisplay) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Les résultats de cette élection ne sont pas encore disponibles'
+                });
+            }
+
+            // Récupérer les données complètes
+            const fullResults = await voteService.getElectionResults(electionId);
+
+            // Transformer pour le frontend étudiant
+            const studentResults = transformForStudent(fullResults);
+
+            res.json({
+                success: true,
+                data: studentResults
+            });
+        } catch (error) {
+            console.error('Erreur résultats étudiants:', error);
+
+            if (error.message === 'Élection non trouvée') {
+                return res.status(404).json({
+                    success: false,
+                    message: error.message
+                });
+            }
+
+            res.status(500).json({
+                success: false,
+                message: 'Erreur serveur'
+            });
+        }
+    }
+
     async getResults(req, res) {
         try {
             const { electionId } = req.params;
@@ -318,6 +358,32 @@ class VoteController {
             });
         }
     }
+
+}
+
+function transformForStudent(fullResults) {
+    return {
+        election: fullResults.election,
+        statistiques: {
+            totalVotes: fullResults.statistiques.totalVotes,
+            totalInscrits: fullResults.statistiques.totalInscrits,
+            tauxParticipation: fullResults.statistiques.tauxParticipation,
+            nombreCandidats: fullResults.resultats.length
+        },
+        resultats: fullResults.resultats.map(candidate => ({
+            id: candidate.candidateId, // Transformation de candidateId → id
+            nom: candidate.nom,
+            prenom: candidate.prenom,
+            photoUrl: candidate.photoUrl,
+            filiere: candidate.filiere || 'Non spécifié',
+            annee: candidate.annee || 'N/A',
+            slogan: candidate.slogan || 'Aucun slogan',
+            scoreFinal: candidate.scoreFinal,
+            details: {
+                totalVotes: candidate.details.totalVotes
+            }
+        }))
+    };
 }
 
 export default new VoteController();
