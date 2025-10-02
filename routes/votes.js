@@ -13,7 +13,7 @@ router.get('/status/:electionId', authenticateToken, voteController.getVoteStatu
 router.post('/validate-token', authenticateToken, voteController.validateToken);
 
 // Routes publiques 
-router.get('/results/:electionId', voteController.getResults);
+router.get('/results/:electionId', authenticateToken, voteController.getResults);
 // Routes admin (résultats détaillés)
 router.get('/results-detailed/:electionId', authenticateToken, requireRole('ADMIN'), voteController.getDetailedResults);
 // GET /api/votes/my-votes - Récupérer tous les votes de l'utilisateur
