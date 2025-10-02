@@ -479,12 +479,13 @@ class VoteService {
 
     async calculateDetailedNormalResults(connection, election) {
         const [candidateRows] = await connection.execute(`
-            SELECT c.*, u.email, e.nom, e.prenom, e.filiere, e.annee
-            FROM candidates c
-            LEFT JOIN users u ON c.userId = u.id
-            LEFT JOIN etudiants e ON u.id = e.userId
-            WHERE c.electionId = ?
-        `, [election.id]);
+    SELECT c.*, u.email, e.nom, e.prenom, e.filiereId, e.annee
+    FROM candidates c
+    LEFT JOIN users u ON c.userId = u.id
+    LEFT JOIN etudiants e ON u.id = e.userId
+    WHERE c.electionId = ?
+`, [election.id]);
+
 
         const [voteRows] = await connection.execute(`
             SELECT 
@@ -535,7 +536,7 @@ class VoteService {
                 nom: candidate.nom,
                 prenom: candidate.prenom,
                 photoUrl: candidate.photoUrl,
-                filiere: candidate.filiere,
+                filiere: candidate.filiereId,
                 annee: candidate.annee,
                 slogan: candidate.slogan,
                 scoreFinal: parseFloat(pourcentage.toFixed(2)),
