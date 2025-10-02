@@ -1,5 +1,5 @@
 import pool from '../dbconfig.js';
-
+import ActivityManager from './activityManager.js';
 class VoteService {
     async getVoteToken(userId, electionId) {
         let connection;
