@@ -383,7 +383,7 @@ class VoteController {
                 nom: candidate.nom,
                 prenom: candidate.prenom,
                 photoUrl: candidate.photoUrl,
-                filiere: candidate.filiere || 'Non spécifié',
+                filiere: candidate.filiereId || 'Non spécifié',
                 annee: candidate.annee || 'N/A',
                 slogan: candidate.slogan || 'Aucun slogan',
                 scoreFinal: candidate.scoreFinal,
