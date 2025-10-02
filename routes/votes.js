@@ -12,7 +12,7 @@ router.post('/', authenticateToken, validateVoting, voteController.submitVote);
 router.get('/status/:electionId', authenticateToken, voteController.getVoteStatus);
 router.post('/validate-token', authenticateToken, voteController.validateToken);
 
-router.get('/student/results/:electionId', authenticateToken, voteController.getStudentResults);
+router.get('/student/results/:electionId', voteController.getStudentResults);
 // Routes publiques 
 router.get('/results/:electionId', voteController.getResults);
 // Routes admin (résultats détaillés)
