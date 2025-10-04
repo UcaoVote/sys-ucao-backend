@@ -1,3 +1,4 @@
+import pool from '../dbconfig.js';
 import voteService from '../services/voteService.js';
 import ActivityManager from '../controllers/activityManager.js';
 
