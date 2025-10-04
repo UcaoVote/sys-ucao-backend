@@ -118,6 +118,8 @@ CREATE TABLE activities (
   id INT AUTO_INCREMENT PRIMARY KEY,
   nom VARCHAR(100) NOT NULL,
   description TEXT,
+  icone VARCHAR(255) DEFAULT NULL,
+  has_subactivities TINYINT(1) DEFAULT 0,
   actif TINYINT(1) DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

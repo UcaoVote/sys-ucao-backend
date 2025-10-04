@@ -6,6 +6,8 @@ import { validateVoting } from '../middlewares/electionValidation.js';
 
 const router = express.Router();
 
+router.get('/elections/wins', authenticateToken, voteController.getElectionWins);
+
 // Routes utilisateur authentifié
 router.get('/token/:electionId', authenticateToken, voteController.getVoteToken);
 router.post('/', authenticateToken, validateVoting, voteController.submitVote);

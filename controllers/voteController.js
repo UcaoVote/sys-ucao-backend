@@ -2,6 +2,24 @@ import voteService from '../services/voteService.js';
 import ActivityManager from '../controllers/activityManager.js';
 
 class VoteController {
+
+    async getElectionWins(req, res) {
+        try {
+            const [rows] = await pool.execute(`
+      SELECT candidateId, COUNT(*) AS elections_won
+      FROM election_results
+      WHERE isWinner = TRUE
+      GROUP BY candidateId
+      ORDER BY elections_won DESC
+    `);
+
+            res.status(200).json({ success: true, data: rows });
+        } catch (error) {
+            console.error('Erreur récupération victoires :', error);
+            res.status(500).json({ success: false, message: 'Erreur serveur' });
+        }
+    }
+
     async getVoteToken(req, res) {
         try {
             const { electionId } = req.params;
@@ -393,6 +411,7 @@ class VoteController {
             }))
         };
     }
+
 }
 
 export default new VoteController();
