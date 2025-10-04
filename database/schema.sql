@@ -109,8 +109,47 @@ CREATE TABLE etudiants (
   annee int(11) DEFAULT NULL,
   photoUrl varchar(500) DEFAULT NULL,
   ecoleId int(11) DEFAULT NULL,
-  filiereId int(11) DEFAULT NULL
+  filiereId int(11) DEFAULT NULL,
+  whatsapp varchar(30) DEFAULT NULL,
+  additional_info text DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- Table des activités
+CREATE TABLE activities (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nom VARCHAR(100) NOT NULL,
+  description TEXT,
+  actif TINYINT(1) DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Table des sous-activités
+CREATE TABLE subactivities (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  activity_id INT NOT NULL,
+  nom VARCHAR(100) NOT NULL,
+  description TEXT,
+  actif TINYINT(1) DEFAULT 1,
+  FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Table de liaison étudiant-activité
+CREATE TABLE student_activities (
+  student_id INT NOT NULL,
+  activity_id INT NOT NULL,
+  PRIMARY KEY (student_id, activity_id),
+  FOREIGN KEY (student_id) REFERENCES etudiants(id) ON DELETE CASCADE,
+  FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Table de liaison étudiant-sous-activité
+CREATE TABLE student_subactivities (
+  student_id INT NOT NULL,
+  activity_id INT NOT NULL,
+  subactivity_id INT NOT NULL,
+  PRIMARY KEY (student_id, activity_id, subactivity_id),
+  FOREIGN KEY (student_id) REFERENCES etudiants(id) ON DELETE CASCADE,
+  FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE,
+  FOREIGN KEY (subactivity_id) REFERENCES subactivities(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE filieres (
   id int(11) NOT NULL,
