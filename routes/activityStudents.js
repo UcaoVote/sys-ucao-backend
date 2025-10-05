@@ -6,7 +6,7 @@ import { authenticateToken, requireAdmin } from '../middlewares/auth.js';
 const router = express.Router();
 
 router.get('/', activityController.getCategories);
-router.get('/:activityId/subactivities', activityController.getSubactivities);
+router.get('/:id/subactivities', activityController.getSubactivities);
 router.get('/all/with-subactivities', activityController.getAllWithSubactivities);
 
 // GET /api/activities/student/:studentId - Récupérer les activités d'un étudiant
