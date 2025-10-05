@@ -1,14 +1,22 @@
 import pool from '../dbconfig.js';
 
 class ActivityController {
-    // Récupérer toutes les catégories principales (Sport, Culture, Technologie)
+    // Récupérer toutes les catégories principales
     async getCategories(req, res) {
         try {
             const [rows] = await pool.execute(
-                `SELECT id, nom, description, icone, has_subactivities 
-                 FROM activities 
-                 WHERE actif = TRUE 
-                 ORDER BY nom`
+                `SELECT 
+                id, 
+                nom, 
+                description, 
+                icone, 
+                has_subactivities, 
+                actif, 
+                created_at, 
+                updated_at 
+             FROM activities 
+             WHERE actif = TRUE 
+             ORDER BY nom`
             );
 
             res.json({
@@ -30,10 +38,17 @@ class ActivityController {
             const { activityId } = req.params;
 
             const [rows] = await pool.execute(
-                `SELECT id, nom, description, icone 
-                 FROM subactivities 
-                 WHERE activity_id = ? AND actif = TRUE 
-                 ORDER BY nom`,
+                `SELECT 
+                id, 
+                nom, 
+                description, 
+                icone, 
+                actif, 
+                created_at, 
+                updated_at 
+             FROM subactivities 
+             WHERE activity_id = ? AND actif = TRUE 
+             ORDER BY nom`,
                 [activityId]
             );
 
@@ -49,6 +64,7 @@ class ActivityController {
             });
         }
     }
+
 
     // Récupérer toutes les activités avec leurs sous-activités (pour l'admin)
     async getAllWithSubactivities(req, res) {
