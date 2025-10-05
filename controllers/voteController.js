@@ -329,15 +329,19 @@ class VoteController {
 
             res.json({
                 success: true,
-                data: elections
+                data: elections,
+                message: elections.length === 0
+                    ? 'Aucune élection terminée disponible'
+                    : 'Élections terminées récupérées avec succès'
             });
         } catch (error) {
             console.error('Erreur récupération élections terminées:', error);
             res.status(500).json({
                 success: false,
-                message: 'Erreur serveur'
+                message: 'Erreur interne du serveur'
             });
         }
+
     }
 
     async getElectionStats(req, res) {

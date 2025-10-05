@@ -889,6 +889,11 @@ class VoteService {
                 ORDER BY e.dateFin DESC
             `);
 
+            if (!elections || elections.length === 0) {
+                console.warn('Aucune élection terminée trouvée');
+                return []; // réponse vide mais valide
+            }
+
             return elections;
 
         } catch (error) {
