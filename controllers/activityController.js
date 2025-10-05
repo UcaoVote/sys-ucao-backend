@@ -65,25 +65,38 @@ class ActivityController {
         }
     }
 
-
     // Récupérer toutes les activités avec leurs sous-activités (pour l'admin)
     async getAllWithSubactivities(req, res) {
         try {
             const [categories] = await pool.execute(
-                `SELECT id, nom, description, icone, has_subactivities 
-                 FROM activities 
-                 WHERE actif = TRUE 
-                 ORDER BY nom`
+                `SELECT 
+                id, 
+                nom, 
+                description, 
+                icone, 
+                has_subactivities, 
+                actif, 
+                created_at, 
+                updated_at 
+             FROM activities 
+             WHERE actif = TRUE 
+             ORDER BY nom`
             );
 
-            // Pour chaque catégorie, récupérer les sous-activités
             const categoriesWithSubs = await Promise.all(
                 categories.map(async (category) => {
                     const [subactivities] = await pool.execute(
-                        `SELECT id, nom, description, icone 
-                         FROM subactivities 
-                         WHERE activity_id = ? AND actif = TRUE 
-                         ORDER BY nom`,
+                        `SELECT 
+                        id, 
+                        nom, 
+                        description, 
+                        icone, 
+                        actif, 
+                        created_at, 
+                        updated_at 
+                     FROM subactivities 
+                     WHERE activity_id = ? AND actif = TRUE 
+                     ORDER BY nom`,
                         [category.id]
                     );
 
@@ -106,6 +119,7 @@ class ActivityController {
             });
         }
     }
+
 }
 
 export default new ActivityController();
