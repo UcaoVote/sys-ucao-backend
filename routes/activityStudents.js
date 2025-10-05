@@ -5,12 +5,275 @@ import { authenticateToken, requireAdmin } from '../middlewares/auth.js';
 
 const router = express.Router();
 
+// =============================================
+// ROUTES PUBLIQUES (sans authentification)
+// =============================================
+
+// Récupérer toutes les catégories d'activités
 router.get('/', activityController.getCategories);
-router.get('/:id/subactivities', activityController.getSubactivities);
+
+// Récupérer les sous-activités d'une activité
+router.get('/:activityId/subactivities', activityController.getSubactivities);
+
+// Récupérer toutes les activités avec leurs sous-activités
 router.get('/all/with-subactivities', activityController.getAllWithSubactivities);
 
-// GET /api/activities/student/:studentId - Récupérer les activités d'un étudiant
-router.get('/student/:studentId', authenticateToken, async (req, res) => {
+// =============================================
+// ROUTES ÉTUDIANT (authentification requise)
+// =============================================
+
+// Récupérer les activités de l'étudiant connecté
+router.get('/my-activities', authenticateToken, async (req, res) => {
+    try {
+        const studentId = req.user.id;
+
+        const [activities] = await pool.execute(
+            `SELECT a.id, a.nom, a.description, a.icone, sa.created_at
+             FROM activities a
+             INNER JOIN student_activities sa ON a.id = sa.activity_id
+             WHERE sa.student_id = ? AND a.actif = TRUE
+             ORDER BY a.nom`,
+            [studentId]
+        );
+
+        res.json({
+            success: true,
+            data: activities
+        });
+    } catch (error) {
+        console.error('Erreur récupération mes activités:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la récupération de vos activités'
+        });
+    }
+});
+
+// Mettre à jour ses propres activités
+router.put('/my-activities', authenticateToken, async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const studentId = req.user.id;
+        const { activities } = req.body;
+
+        if (!activities || !Array.isArray(activities)) {
+            return res.status(400).json({
+                success: false,
+                message: 'La liste des activités est requise'
+            });
+        }
+
+        // Vérifier que les activités existent
+        const placeholders = activities.map(() => '?').join(',');
+        const [activityRows] = await connection.execute(
+            `SELECT id FROM activities WHERE id IN (${placeholders}) AND actif = TRUE`,
+            activities
+        );
+
+        if (activityRows.length !== activities.length) {
+            return res.status(400).json({
+                success: false,
+                message: 'Certaines activités sont invalides'
+            });
+        }
+
+        // Supprimer les activités existantes
+        await connection.execute(
+            'DELETE FROM student_activities WHERE student_id = ?',
+            [studentId]
+        );
+
+        // Ajouter les nouvelles activités
+        if (activities.length > 0) {
+            const activityValues = activities.map(activityId => [studentId, activityId]);
+            await connection.query(
+                'INSERT INTO student_activities (student_id, activity_id) VALUES ?',
+                [activityValues]
+            );
+        }
+
+        await connection.commit();
+
+        res.json({
+            success: true,
+            message: 'Vos activités ont été mises à jour avec succès',
+            data: { activities }
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erreur mise à jour mes activités:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la mise à jour de vos activités'
+        });
+    } finally {
+        await connection.release();
+    }
+});
+
+// =============================================
+// ROUTES ADMIN (authentification + admin requis)
+// =============================================
+
+// CRÉATION
+// Créer une nouvelle activité
+router.post('/', authenticateToken, requireAdmin, async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const { nom, description, icone, has_subactivities = false } = req.body;
+
+        // Validation des champs obligatoires
+        if (!nom || !nom.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Le nom de l\'activité est obligatoire'
+            });
+        }
+
+        if (!icone || !icone.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'L\'icône de l\'activité est obligatoire'
+            });
+        }
+
+        // Vérifier si une activité avec le même nom existe déjà
+        const [existingActivities] = await connection.execute(
+            'SELECT id FROM activities WHERE nom = ? AND actif = TRUE',
+            [nom.trim()]
+        );
+
+        if (existingActivities.length > 0) {
+            return res.status(409).json({
+                success: false,
+                message: 'Une activité avec ce nom existe déjà'
+            });
+        }
+
+        // Insérer la nouvelle activité
+        const [result] = await connection.execute(
+            `INSERT INTO activities (nom, description, icone, has_subactivities, actif, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, TRUE, NOW(), NOW())`,
+            [nom.trim(), description ? description.trim() : null, icone.trim(), has_subactivities]
+        );
+
+        // Récupérer l'activité créée
+        const [newActivity] = await connection.execute(
+            'SELECT * FROM activities WHERE id = ?',
+            [result.insertId]
+        );
+
+        await connection.commit();
+
+        res.status(201).json({
+            success: true,
+            message: 'Activité créée avec succès',
+            data: newActivity[0]
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erreur création activité:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la création de l\'activité'
+        });
+    } finally {
+        await connection.release();
+    }
+});
+
+// Créer une sous-activité
+router.post('/:activityId/subactivities', authenticateToken, requireAdmin, async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const { activityId } = req.params;
+        const { nom, description, icone } = req.body;
+
+        // Validation des champs obligatoires
+        if (!nom || !nom.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Le nom de la sous-activité est obligatoire'
+            });
+        }
+
+        if (!icone || !icone.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'L\'icône de la sous-activité est obligatoire'
+            });
+        }
+
+        // Vérifier que l'activité parent existe
+        const [activityRows] = await connection.execute(
+            'SELECT id FROM activities WHERE id = ? AND actif = TRUE',
+            [activityId]
+        );
+
+        if (activityRows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Activité parent non trouvée'
+            });
+        }
+
+        // Vérifier si une sous-activité avec le même nom existe déjà pour cette activité
+        const [existingSubactivities] = await connection.execute(
+            'SELECT id FROM subactivities WHERE nom = ? AND activity_id = ? AND actif = TRUE',
+            [nom.trim(), activityId]
+        );
+
+        if (existingSubactivities.length > 0) {
+            return res.status(409).json({
+                success: false,
+                message: 'Une sous-activité avec ce nom existe déjà pour cette activité'
+            });
+        }
+
+        // Insérer la nouvelle sous-activité
+        const [result] = await connection.execute(
+            `INSERT INTO subactivities (nom, description, icone, activity_id, actif, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, TRUE, NOW(), NOW())`,
+            [nom.trim(), description ? description.trim() : null, icone.trim(), activityId]
+        );
+
+        // Récupérer la sous-activité créée
+        const [newSubactivity] = await connection.execute(
+            'SELECT * FROM subactivities WHERE id = ?',
+            [result.insertId]
+        );
+
+        await connection.commit();
+
+        res.status(201).json({
+            success: true,
+            message: 'Sous-activité créée avec succès',
+            data: newSubactivity[0]
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erreur création sous-activité:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la création de la sous-activité'
+        });
+    } finally {
+        await connection.release();
+    }
+});
+
+// GESTION DES ÉTUDIANTS
+// Récupérer les activités d'un étudiant spécifique
+router.get('/student/:studentId', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { studentId } = req.params;
 
@@ -36,35 +299,7 @@ router.get('/student/:studentId', authenticateToken, async (req, res) => {
     }
 });
 
-// GET /api/activities/my-activities - Récupérer les activités de l'étudiant connecté
-router.get('/my-activities', authenticateToken, async (req, res) => {
-    try {
-        // Récupérer l'ID de l'étudiant depuis le token
-        const studentId = req.user.id; // À adapter selon votre système d'authentification
-
-        const [activities] = await pool.execute(
-            `SELECT a.id, a.nom, a.description, a.icone, sa.created_at
-             FROM activities a
-             INNER JOIN student_activities sa ON a.id = sa.activity_id
-             WHERE sa.student_id = ? AND a.actif = TRUE
-             ORDER BY a.nom`,
-            [studentId]
-        );
-
-        res.json({
-            success: true,
-            data: activities
-        });
-    } catch (error) {
-        console.error('Erreur récupération mes activités:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erreur lors de la récupération de vos activités'
-        });
-    }
-});
-
-// POST /api/activities/student/:studentId - Ajouter des activités à un étudiant (Admin)
+// Ajouter des activités à un étudiant
 router.post('/student/:studentId', authenticateToken, requireAdmin, async (req, res) => {
     const connection = await pool.getConnection();
     try {
@@ -142,72 +377,7 @@ router.post('/student/:studentId', authenticateToken, requireAdmin, async (req, 
     }
 });
 
-// PUT /api/activities/my-activities - Mettre à jour ses propres activités
-router.put('/my-activities', authenticateToken, async (req, res) => {
-    const connection = await pool.getConnection();
-    try {
-        await connection.beginTransaction();
-
-        const studentId = req.user.id; // À adapter
-        const { activities } = req.body;
-
-        if (!activities || !Array.isArray(activities)) {
-            return res.status(400).json({
-                success: false,
-                message: 'La liste des activités est requise'
-            });
-        }
-
-        // Vérifier que les activités existent
-        const placeholders = activities.map(() => '?').join(',');
-        const [activityRows] = await connection.execute(
-            `SELECT id FROM activities WHERE id IN (${placeholders}) AND actif = TRUE`,
-            activities
-        );
-
-        if (activityRows.length !== activities.length) {
-            return res.status(400).json({
-                success: false,
-                message: 'Certaines activités sont invalides'
-            });
-        }
-
-        // Supprimer les activités existantes
-        await connection.execute(
-            'DELETE FROM student_activities WHERE student_id = ?',
-            [studentId]
-        );
-
-        // Ajouter les nouvelles activités
-        if (activities.length > 0) {
-            const activityValues = activities.map(activityId => [studentId, activityId]);
-            await connection.query(
-                'INSERT INTO student_activities (student_id, activity_id) VALUES ?',
-                [activityValues]
-            );
-        }
-
-        await connection.commit();
-
-        res.json({
-            success: true,
-            message: 'Vos activités ont été mises à jour avec succès',
-            data: { activities }
-        });
-
-    } catch (error) {
-        await connection.rollback();
-        console.error('Erreur mise à jour mes activités:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erreur lors de la mise à jour de vos activités'
-        });
-    } finally {
-        await connection.release();
-    }
-});
-
-// GET /api/activities/students/:activityId - Récupérer les étudiants d'une activité (Admin)
+// Récupérer les étudiants d'une activité
 router.get('/students/:activityId', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { activityId } = req.params;
@@ -237,7 +407,102 @@ router.get('/students/:activityId', authenticateToken, requireAdmin, async (req,
     }
 });
 
-// GET /api/activities/stats - Statistiques des activités (Admin)
+// STATUT ET STATISTIQUES
+// Activer/désactiver une activité
+router.patch('/:activityId/actif', authenticateToken, requireAdmin, async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const { activityId } = req.params;
+        const { actif } = req.body;
+
+        // Vérifier que l'activité existe
+        const [activityRows] = await connection.execute(
+            'SELECT id FROM activities WHERE id = ?',
+            [activityId]
+        );
+
+        if (activityRows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Activité non trouvée'
+            });
+        }
+
+        // Mettre à jour le statut
+        await connection.execute(
+            'UPDATE activities SET actif = ?, updated_at = NOW() WHERE id = ?',
+            [actif, activityId]
+        );
+
+        await connection.commit();
+
+        res.json({
+            success: true,
+            message: `Activité ${actif ? 'activée' : 'désactivée'} avec succès`
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erreur mise à jour activité:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la mise à jour de l\'activité'
+        });
+    } finally {
+        await connection.release();
+    }
+});
+
+// Activer/désactiver une sous-activité
+router.patch('/subactivities/:subactivityId/actif', authenticateToken, requireAdmin, async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const { subactivityId } = req.params;
+        const { actif } = req.body;
+
+        // Vérifier que la sous-activité existe
+        const [subactivityRows] = await connection.execute(
+            'SELECT id FROM subactivities WHERE id = ?',
+            [subactivityId]
+        );
+
+        if (subactivityRows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Sous-activité non trouvée'
+            });
+        }
+
+        // Mettre à jour le statut
+        await connection.execute(
+            'UPDATE subactivities SET actif = ?, updated_at = NOW() WHERE id = ?',
+            [actif, subactivityId]
+        );
+
+        await connection.commit();
+
+        res.json({
+            success: true,
+            message: `Sous-activité ${actif ? 'activée' : 'désactivée'} avec succès`
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erreur mise à jour sous-activité:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la mise à jour de la sous-activité'
+        });
+    } finally {
+        await connection.release();
+    }
+});
+
+// Récupérer les statistiques des activités
 router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const [stats] = await pool.execute(
@@ -269,75 +534,6 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
             success: false,
             message: 'Erreur lors de la récupération des statistiques'
         });
-    }
-});
-
-// POST /api/activities - Créer une nouvelle activité (Admin)
-router.post('/', authenticateToken, requireAdmin, async (req, res) => {
-    const connection = await pool.getConnection();
-    try {
-        await connection.beginTransaction();
-
-        const { nom, description, icone, has_subactivities = false } = req.body;
-
-        // Validation des champs obligatoires
-        if (!nom || !nom.trim()) {
-            return res.status(400).json({
-                success: false,
-                message: 'Le nom de l\'activité est obligatoire'
-            });
-        }
-
-        if (!icone || !icone.trim()) {
-            return res.status(400).json({
-                success: false,
-                message: 'L\'icône de l\'activité est obligatoire'
-            });
-        }
-
-        // Vérifier si une activité avec le même nom existe déjà
-        const [existingActivities] = await connection.execute(
-            'SELECT id FROM activities WHERE nom = ? AND actif = TRUE',
-            [nom.trim()]
-        );
-
-        if (existingActivities.length > 0) {
-            return res.status(409).json({
-                success: false,
-                message: 'Une activité avec ce nom existe déjà'
-            });
-        }
-
-        // Insérer la nouvelle activité
-        const [result] = await connection.execute(
-            `INSERT INTO activities (nom, description, icone, has_subactivities, actif, created_at, updated_at) 
-             VALUES (?, ?, ?, ?, TRUE, NOW(), NOW())`,
-            [nom.trim(), description ? description.trim() : null, icone.trim(), has_subactivities]
-        );
-
-        // Récupérer l'activité créée
-        const [newActivity] = await connection.execute(
-            'SELECT * FROM activities WHERE id = ?',
-            [result.insertId]
-        );
-
-        await connection.commit();
-
-        res.status(201).json({
-            success: true,
-            message: 'Activité créée avec succès',
-            data: newActivity[0]
-        });
-
-    } catch (error) {
-        await connection.rollback();
-        console.error('Erreur création activité:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erreur lors de la création de l\'activité'
-        });
-    } finally {
-        await connection.release();
     }
 });
 
