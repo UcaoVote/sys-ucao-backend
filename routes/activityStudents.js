@@ -272,4 +272,73 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
     }
 });
 
+// POST /api/activities - Créer une nouvelle activité (Admin)
+router.post('/', authenticateToken, requireAdmin, async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        const { nom, description, icone, has_subactivities = false } = req.body;
+
+        // Validation des champs obligatoires
+        if (!nom || !nom.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Le nom de l\'activité est obligatoire'
+            });
+        }
+
+        if (!icone || !icone.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'L\'icône de l\'activité est obligatoire'
+            });
+        }
+
+        // Vérifier si une activité avec le même nom existe déjà
+        const [existingActivities] = await connection.execute(
+            'SELECT id FROM activities WHERE nom = ? AND actif = TRUE',
+            [nom.trim()]
+        );
+
+        if (existingActivities.length > 0) {
+            return res.status(409).json({
+                success: false,
+                message: 'Une activité avec ce nom existe déjà'
+            });
+        }
+
+        // Insérer la nouvelle activité
+        const [result] = await connection.execute(
+            `INSERT INTO activities (nom, description, icone, has_subactivities, actif, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, TRUE, NOW(), NOW())`,
+            [nom.trim(), description ? description.trim() : null, icone.trim(), has_subactivities]
+        );
+
+        // Récupérer l'activité créée
+        const [newActivity] = await connection.execute(
+            'SELECT * FROM activities WHERE id = ?',
+            [result.insertId]
+        );
+
+        await connection.commit();
+
+        res.status(201).json({
+            success: true,
+            message: 'Activité créée avec succès',
+            data: newActivity[0]
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erreur création activité:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la création de l\'activité'
+        });
+    } finally {
+        await connection.release();
+    }
+});
+
 export default router;
