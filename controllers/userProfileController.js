@@ -130,6 +130,66 @@ class UserProfileController {
         }
     }
 
+    // Changer l'avatar du candidat
+    async uploadCandidateAvatar(req, res) {
+        try {
+            console.log('=== UPLOAD CANDIDATE AVATAR START ===');
+            console.log('User:', req.user);
+            console.log('File received:', req.file ? {
+                originalname: req.file.originalname,
+                mimetype: req.file.mimetype,
+                size: req.file.size,
+                bufferLength: req.file.buffer?.length
+            } : 'No file');
+
+            if (!req.file) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Aucun fichier téléchargé'
+                });
+            }
+
+            // Upload vers ImgBB et mise à jour dans la table candidats
+            const photoUrl = await userProfileService.uploadCandidateAvatar(
+                req.file.buffer,
+                req.file.originalname,
+                req.file.mimetype,
+                req.user.id
+            );
+
+            res.json({
+                success: true,
+                data: {
+                    photoUrl: photoUrl
+                },
+                message: 'Photo du candidat mise à jour avec succès'
+            });
+
+        } catch (error) {
+            console.error('Erreur upload photo candidat:', error);
+
+            let errorMessage = 'Erreur lors de l\'upload de l\'avatar';
+            let statusCode = 500;
+
+            if (error.message.includes('Type de fichier non supporté')) {
+                errorMessage = 'Type de fichier non supporté';
+                statusCode = 400;
+            } else if (error.message.includes('File too large')) {
+                errorMessage = 'Fichier trop volumineux (max 2MB)';
+                statusCode = 400;
+            } else if (error.message.includes('ImgBB')) {
+                errorMessage = 'Erreur du service d\'upload d\'images';
+            }
+
+            res.status(statusCode).json({
+                success: false,
+                message: errorMessage,
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
+        }
+    }
+
+
     // Changer le mot de passe
     async changePassword(req, res) {
         try {

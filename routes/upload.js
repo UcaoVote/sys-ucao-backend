@@ -48,4 +48,13 @@ router.post('/image',
     userProfileController.uploadAvatar
 );
 
+// Route pour l'upload de l'image de profil du candidat
+router.post('/candidats/image',
+    authenticateToken,
+    debugUpload,
+    upload.single('image'),
+    handleUploadError,
+    userProfileController.uploadCandidateAvatar
+);
+
 export default router;

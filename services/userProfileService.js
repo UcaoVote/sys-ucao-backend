@@ -1,6 +1,5 @@
 import axios from 'axios';
 import FormData from 'form-data';
-import fs from 'fs';
 import bcrypt from 'bcrypt';
 import pool from '../dbconfig.js';
 
@@ -224,6 +223,73 @@ class UserProfileService {
             throw error;
         }
     }
+
+    // Uploader l'avatar vers ImgBB pour un candidat
+    async uploadCandidateAvatar(fileBuffer, fileName, mimeType, userId) {
+        try {
+            console.log('Starting ImgBB upload...');
+            console.log('File details:', { fileName, mimeType, bufferSize: fileBuffer.length });
+
+            // Créer un FormData pour ImgBB
+            const formData = new FormData();
+            const base64Image = fileBuffer.toString('base64');
+            formData.append('image', base64Image);
+
+            if (fileName) {
+                formData.append('name', fileName.replace(/\.[^/.]+$/, ""));
+            }
+
+            console.log('Sending to ImgBB...');
+
+            const response = await axios.post(
+                `${IMGBB_UPLOAD_URL}?key=${process.env.IMGBB_API_KEY}`,
+                formData,
+                {
+                    headers: formData.getHeaders(),
+                    timeout: 10000
+                }
+            );
+
+            console.log('ImgBB response:', response.data);
+
+            if (!response.data.success) {
+                throw new Error('Échec de l\'upload vers ImgBB: ' + JSON.stringify(response.data));
+            }
+
+            const imgbbUrl = response.data.data.url;
+            console.log('Upload successful. URL:', imgbbUrl);
+
+            // Mettre à jour l'URL dans la table candidats
+            let connection;
+            try {
+                connection = await pool.getConnection();
+
+                await connection.execute(
+                    `UPDATE candidats SET photoUrl = ? WHERE userId = ?`,
+                    [imgbbUrl, userId]
+                );
+
+                console.log('Database updated successfully');
+
+                return imgbbUrl;
+            } finally {
+                if (connection) await connection.release();
+            }
+
+        } catch (error) {
+            console.error('Upload error:', error);
+
+            if (error.response?.data?.error?.message) {
+                throw new Error(`ImgBB Error: ${error.response.data.error.message}`);
+            }
+            if (error.code === 'ECONNABORTED') {
+                throw new Error('Timeout lors de l\'upload vers ImgBB');
+            }
+
+            throw error;
+        }
+    }
+
 
     // Changer le mot de passe
     async changePassword(userId, currentPassword, newPassword) {
