@@ -265,7 +265,7 @@ class UserProfileService {
                 connection = await pool.getConnection();
 
                 await connection.execute(
-                    `UPDATE candidats SET photoUrl = ? WHERE userId = ?`,
+                    `UPDATE candidates SET photoUrl = ? WHERE userId = ?`,
                     [imgbbUrl, userId]
                 );
 
