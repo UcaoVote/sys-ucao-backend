@@ -9,6 +9,7 @@ import electionInitializer from './scripts/initElections.js';
 import rateLimit from 'express-rate-limit';
 
 // Import des routes
+import importRouter from './routes/import.js';
 import activityStudentsRouter from './routes/activityStudents.js';
 import uploadRouter from './routes/upload.js';
 import matriculesRouter from './routes/import.js';
@@ -100,6 +101,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 // 🧭 Routes API
+app.use('/api/import', importRouter);
 app.use('/api/activities', activityStudentsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/matricules', matriculesRouter);
