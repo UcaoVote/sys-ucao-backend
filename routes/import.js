@@ -1,10 +1,10 @@
-// routes/import.js
 import express from 'express';
 import { authenticateToken } from '../middlewares/auth.js';
 import { importController } from '../controllers/importController.js';
 
 const router = express.Router();
 
-router.post('/import', authenticateToken, importController.importMatricules);
+// Route mise à jour pour l'importation d'étudiants
+router.post('/import/etudiants', authenticateToken, importController.importEtudiants);
 
 export default router;

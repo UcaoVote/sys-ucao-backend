@@ -432,4 +432,42 @@ INSERT INTO `elections` (`id`, `type`, `titre`, `description`, `dateDebut`, `dat
 (1, 'SALLE', 'Election Responsable', 'Pour l\'année 2025-2026', '2025-10-05 10:22:00', '2025-10-05 10:38:20', '2025-10-05 10:08:00', '2025-10-05 10:20:00', '2025-10-05 10:07:43', 1, 'PHASE1', NULL, 0, 'MANUAL', 1, 1, 1, 1, 'PREMIER', '2025-10-05 10:55:43'),
 (2, 'ECOLE', 'Election delegué', '2025', '2025-10-06 17:46:00', '2025-10-06 17:51:30', '2025-10-06 17:38:00', '2025-10-06 17:45:00', '2025-10-06 17:37:16', NULL, 'PHASE2', 'PREMIER', 0, 'MANUAL', 1, 1, NULL, 0, NULL, NULL),
 (3, 'ECOLE', 'Election delegué', 'Rien', '2025-10-06 18:01:00', '2025-10-06 18:11:30', '2025-10-06 17:52:00', '2025-10-06 18:00:00', '2025-10-06 17:51:21', NULL, 'PHASE2', 'DEUXIEME', 0, 'MANUAL', 1, 1, NULL, 0, NULL, NULL);
-INSERT INTO `etudiants` (`id`, `userId`, `matricule`, `codeInscription`, `identifiantTemporaire`, `nom`, `prenom`, `annee`, `phot
+INSERT INTO `etudiants` (`id`, `userId`, `matricule`, `codeInscription`, `identifiantTemporaire`, `nom`, `prenom`, `annee`, `photoUrl`, `ecoleId`, `filiereId`, `whatsapp`, `additional_info`) VALUES
+(1, '339befd1-a0e7-11f0-8a8b-a2aa80b4014f', NULL, 'UCAO-49KU-5HHT', 'TEMP0IPD788A', 'TCHIDEHOU', 'Dodji Virgile', 1, 'https://i.ibb.co/gLGxrsCq/29258468-208347936584824-7174167565688635392-n-removebg-preview.png', 1, 1, '+229 44999341', 'Rien'),
+(2, '589dc781-a2d8-11f0-8a8b-a2aa80b4014f', NULL, 'UCAO-UDMZ-UCZY', 'TEMP7LIUMHX1', 'UCAO', 'UUC', 1, 'https://i.ibb.co/JjFXtwLS/29258468-208347936584824-7174167565688635392-n.png', 1, 1, '+229 56043081', 'Rien');
+INSERT INTO `filieres` (`id`, `nom`, `ecoleId`, `actif`, `createdAt`) VALUES
+(1, 'Informatique Industrielle et Maintenance', 1, 1, '2025-10-04 05:54:30');
+INSERT INTO `notifications` (`id`, `title`, `message`, `type`, `priority`, `is_read`, `relatedEntity`, `entityId`, `userId`, `createdAt`, `updatedAt`) VALUES
+('96b1a255-1f46-4511-9314-7d3f076c46e4', 'Candidature Approuvée', 'Votre candidature pour l\'élection \"Election Responsable\" a été approuvée.', 'CANDIDATURE', 'HIGH', 1, 'election', '1', '339befd1-a0e7-11f0-8a8b-a2aa80b4014f', '2025-10-05 10:14:15', '2025-10-05 10:32:42');
+INSERT INTO `registration_codes` (`id`, `code`, `createdAt`, `expiresAt`, `used`, `usedAt`, `generatedBy`, `usedBy`) VALUES
+('fbfdb009-a0e6-11f0-8a8b-a2aa80b4014f', 'UCAO-49KU-5HHT', '2025-10-04 05:57:17', '2025-10-07 05:57:18', 1, NULL, 'user_1759556064875_467t2upf9', '339befd1-a0e7-11f0-8a8b-a2aa80b4014f'),
+('fc17263e-a0e6-11f0-8a8b-a2aa80b4014f', 'UCAO-WS2J-Q8VG', '2025-10-04 05:57:18', '2025-10-07 05:57:18', 0, NULL, 'user_1759556064875_467t2upf9', NULL),
+('fc3097be-a0e6-11f0-8a8b-a2aa80b4014f', 'UCAO-XDLW-ZMHU', '2025-10-04 05:57:18', '2025-10-07 05:57:18', 0, NULL, 'user_1759556064875_467t2upf9', NULL),
+('fc4a132c-a0e6-11f0-8a8b-a2aa80b4014f', 'UCAO-ENDW-KMF9', '2025-10-04 05:57:18', '2025-10-07 05:57:18', 0, NULL, 'user_1759556064875_467t2upf9', NULL),
+('fc638d20-a0e6-11f0-8a8b-a2aa80b4014f', 'UCAO-UDMZ-UCZY', '2025-10-04 05:57:18', '2025-10-07 05:57:18', 1, NULL, 'user_1759556064875_467t2upf9', '589dc781-a2d8-11f0-8a8b-a2aa80b4014f');
+
+INSERT INTO `student_activities` (`student_id`, `activity_id`) VALUES
+(2, 1);
+INSERT INTO `student_subactivities` (`student_id`, `activity_id`, `subactivity_id`) VALUES
+(2, 1, 1);
+INSERT INTO `subactivities` (`id`, `activity_id`, `nom`, `description`, `actif`, `icone`, `created_at`, `updated_at`) VALUES
+(1, 1, 'UCAO-TECH', 'Science', 1, 'code', '2025-10-05 12:11:38', '2025-10-05 12:34:47'),
+(2, 2, 'Danse', 'rien', 1, 'music', '2025-10-06 17:32:15', '2025-10-06 17:32:15');
+INSERT INTO `users` (`id`, `email`, `password`, `role`, `createdAt`, `actif`, `tempPassword`, `requirePasswordChange`, `passwordResetExpires`) VALUES
+('339befd1-a0e7-11f0-8a8b-a2aa80b4014f', 'tchidehoudodjivirgile@gmail.com', '$2b$10$xN2G3sl4QOfSsvFMwObmfO2sBOmQXdWPSpwmU29iaGJzKUIHIgZiG', 'ETUDIANT', '2025-10-04 05:58:51', 1, NULL, 0, NULL),
+('589dc781-a2d8-11f0-8a8b-a2aa80b4014f', 'ucaooootech@gmail.com', '$2b$10$DeQkJV4IVExB3INEV3JMUulDZ6W49eewIKHhfhU1O5CsSjkh7w22m', 'ETUDIANT', '2025-10-06 17:17:33', 1, NULL, 0, NULL),
+('user_1759556064875_467t2upf9', 'ucaotech@gmail.com', '$2b$10$HEg02GijbrHI0/eq3PiBCeYiuOiuEPNnlH7w5i/usMdzVobYT.8ZK', 'ADMIN', '2025-10-04 05:34:25', 1, NULL, 0, NULL);
+INSERT INTO `vote_tokens` (`id`, `token`, `userId`, `electionId`, `isUsed`, `createdAt`, `expiresAt`, `usedAt`) VALUES
+(1, 'e1798a96-a1d5-11f0-8a8b-a2aa80b4014f', '339befd1-a0e7-11f0-8a8b-a2aa80b4014f', 1, 1, '2025-10-05 10:27:23', '2025-10-05 11:27:23', '2025-10-05 10:27:27');
+
+INSERT INTO `votes` (`id`, `userId`, `electionId`, `candidateId`, `createdAt`, `poidsVote`) VALUES
+(1, '339befd1-a0e7-11f0-8a8b-a2aa80b4014f', 1, 1, '2025-10-05 10:27:27', 1);
+
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;

@@ -158,7 +158,7 @@ router.put('/my-activities', authenticateToken, async (req, res) => {
 // ROUTES ADMIN (authentification + admin requis)
 // =============================================
 
-// CRÉATION
+
 // Créer une nouvelle activité
 router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     const connection = await pool.getConnection();
@@ -448,7 +448,7 @@ router.get('/students/:activityId', authenticateToken, requireAdmin, async (req,
 });
 
 // STATUT ET STATISTIQUES
-// Activer/désactiver une activité
+
 router.patch('/:activityId/actif', authenticateToken, requireAdmin, async (req, res) => {
     const connection = await pool.getConnection();
     try {
