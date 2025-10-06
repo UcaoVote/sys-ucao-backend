@@ -1,4 +1,5 @@
 import authService from '../services/authService.js';
+import userService from '../services/userService.js';
 
 class AuthController {
 
@@ -25,6 +26,40 @@ class AuthController {
                     success: false,
                     message: 'Identifiants invalides'
                 });
+            }
+
+            // Si findUser retourne un objet avec seulement 'student', cela signifie que l'étudiant
+            // existe en base mais n'a pas de compte utilisateur lié. Dans ce cas, on crée
+            // automatiquement l'utilisateur lors de la première connexion avec matricule/code.
+            if (user.student && !user.id) {
+                // On exige un mot de passe pour créer l'utilisateur
+                if (!password) {
+                    return res.status(400).json({ success: false, message: 'Mot de passe requis pour première connexion' });
+                }
+
+                // Utiliser l'email fourni dans la table etudiants si l'admin l'a importé
+                const emailToUse = user.student.email || `${user.student.matricule || user.student.codeInscription || user.student.identifiantTemporaire}@no-email.local`;
+
+                // Créer l'utilisateur et lier à l'étudiant
+                const newUserId = await userService.createUser({
+                    email: emailToUse,
+                    password
+                });
+
+                // Mettre à jour l'étudiant pour lier le userId
+                await userService.updateStudent({
+                    ...user.student,
+                    tempId: user.student.identifiantTemporaire
+                }, user.student.id, newUserId);
+
+                // Re-fetch user object
+                const createdUser = await authService.findUser(placeholderEmail);
+                if (!createdUser) {
+                    return res.status(500).json({ success: false, message: 'Impossible de créer le compte utilisateur' });
+                }
+
+                // Remplacer user par createdUser pour poursuivre le flow normal
+                Object.assign(user, createdUser);
             }
 
             if (!user.actif) {

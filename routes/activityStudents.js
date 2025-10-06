@@ -94,6 +94,46 @@ router.put('/my-activities', authenticateToken, async (req, res) => {
             );
         }
 
+        // Gérer les sous-activités si fournies (format attendu: { activityId: [subId, ...], ... })
+        const { subactivities } = req.body;
+        if (subactivities && typeof subactivities === 'object') {
+            // Supprimer les sous-activités existantes
+            await connection.execute('DELETE FROM student_subactivities WHERE student_id = ?', [studentId]);
+
+            // Préparer données d'insertion
+            const insertData = [];
+            for (const [activityId, subIds] of Object.entries(subactivities)) {
+                if (Array.isArray(subIds) && subIds.length > 0) {
+                    for (const subId of subIds) {
+                        if (subId !== undefined && subId !== null && !isNaN(parseInt(subId))) {
+                            insertData.push([studentId, parseInt(activityId), parseInt(subId)]);
+                        }
+                    }
+                }
+            }
+
+            if (insertData.length > 0) {
+                // Vérifier que les sous-activités existent et appartiennent aux activités
+                const allSubIds = [...new Set(insertData.map(i => i[2]))];
+                const placeholders = allSubIds.map(() => '?').join(',');
+                const [existingSubs] = await connection.execute(
+                    `SELECT id, activity_id FROM subactivities WHERE id IN (${placeholders}) AND actif = TRUE`,
+                    allSubIds
+                );
+
+                const validInsert = insertData.filter(([sId, activityId, subId]) => {
+                    return existingSubs.some(sub => sub.id === subId && sub.activity_id === activityId);
+                });
+
+                if (validInsert.length > 0) {
+                    await connection.query(
+                        'INSERT INTO student_subactivities (student_id, activity_id, subactivity_id) VALUES ?',
+                        [validInsert]
+                    );
+                }
+            }
+        }
+
         await connection.commit();
 
         res.json({

@@ -34,22 +34,59 @@ class AuthService {
         let connection;
         try {
             connection = await pool.getConnection();
-
+            // Si c'est une adresse email, chercher directement dans users
             if (identifier.includes('@')) {
                 const [userRows] = await connection.execute(
                     'SELECT * FROM users WHERE email = ?',
                     [identifier]
                 );
                 return userRows[0] || null;
-            } else {
-                const [studentRows] = await connection.execute(
-                    `SELECT u.* FROM users u 
-           JOIN etudiants e ON u.id = e.userId 
-           WHERE e.identifiantTemporaire = ?`,
-                    [identifier]
-                );
-                return studentRows[0] || null;
             }
+
+            // Sinon, tenter de retrouver un étudiant par identifiant temporaire, matricule ou codeInscription
+            const [rows] = await connection.execute(
+                `SELECT u.id as user_id, u.email as user_email, u.password as user_password, u.tempPassword as user_tempPassword,
+                        u.requirePasswordChange as user_requirePasswordChange, u.actif as user_actif, u.role as user_role,
+            e.id as student_id, e.userId as student_userId, e.matricule, e.codeInscription, e.identifiantTemporaire, e.email as student_email,
+                        e.nom as student_nom, e.prenom as student_prenom, e.filiereId, e.ecoleId, e.annee
+                 FROM etudiants e
+                 LEFT JOIN users u ON e.userId = u.id
+                 WHERE e.identifiantTemporaire = ? OR e.matricule = ? OR e.codeInscription = ?
+                 LIMIT 1`,
+                [identifier, identifier, identifier]
+            );
+
+            if (!rows || rows.length === 0) return null;
+
+            const r = rows[0];
+            const student = {
+                id: r.student_id,
+                userId: r.student_userId,
+                matricule: r.matricule,
+                codeInscription: r.codeInscription,
+                identifiantTemporaire: r.identifiantTemporaire,
+                nom: r.student_nom,
+                prenom: r.student_prenom,
+                filiereId: r.filiereId,
+                ecoleId: r.ecoleId,
+                annee: r.annee
+            };
+
+            if (r.user_id) {
+                return {
+                    id: r.user_id,
+                    email: r.user_email,
+                    password: r.user_password,
+                    tempPassword: r.user_tempPassword,
+                    requirePasswordChange: r.user_requirePasswordChange,
+                    actif: r.user_actif,
+                    role: r.user_role,
+                    student
+                };
+            }
+
+            // Pas d'utilisateur lié, retourner uniquement l'objet étudiant
+            return { student };
         } finally {
             if (connection) await connection.release();
         }
