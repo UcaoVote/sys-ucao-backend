@@ -1,7 +1,16 @@
 import authService from '../services/authService.js';
 import userService from '../services/userService.js';
+import pool from '../dbconfig.js'; // Import ajouté
 
 class AuthController {
+    constructor() {
+        // Lier toutes les méthodes au contexte de la classe
+        this.login = this.login.bind(this);
+        this.handleTemporaryLogin = this.handleTemporaryLogin.bind(this);
+        this.changePassword = this.changePassword.bind(this);
+        this.forgotPassword = this.forgotPassword.bind(this);
+        this.resetPassword = this.resetPassword.bind(this);
+    }
 
     async login(req, res) {
         try {
@@ -52,8 +61,8 @@ class AuthController {
                     tempId: user.student.identifiantTemporaire
                 }, user.student.id, newUserId);
 
-                // Re-fetch user object
-                const createdUser = await authService.findUser(placeholderEmail);
+                // CORRECTION: Utiliser emailToUse au lieu de placeholderEmail
+                const createdUser = await authService.findUser(emailToUse);
                 if (!createdUser) {
                     return res.status(500).json({ success: false, message: 'Impossible de créer le compte utilisateur' });
                 }
