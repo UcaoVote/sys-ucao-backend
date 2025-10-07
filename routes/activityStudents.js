@@ -607,4 +607,326 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
     }
 });
 
+// =============================================
+// NOUVELLES ROUTES POUR LA PAGE ACTIVITÉS
+// =============================================
+
+// Récupérer tous les étudiants avec leurs activités et sous-activités
+router.get('/students/all/with-activities', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const [students] = await pool.execute(
+            `SELECT 
+                e.id as student_id,
+                e.nom,
+                e.prenom,
+                e.email,
+                e.photo,
+                e.annee,
+                e.ecoleId,
+                e.filiereId,
+                ec.nom as ecole_nom,
+                f.nom as filiere_nom,
+                a.id as category_id,
+                a.nom as category_name,
+                a.icone as category_icon,
+                sa.created_at as date_inscription,
+                sa.actif,
+                s.id as subactivity_id,
+                s.nom as subactivity_name,
+                s.icone as subactivity_icon,
+                ss.created_at as subactivity_date_inscription
+             FROM etudiants e
+             INNER JOIN ecoles ec ON e.ecoleId = ec.id
+             INNER JOIN filieres f ON e.filiereId = f.id
+             LEFT JOIN student_activities sa ON e.id = sa.student_id
+             LEFT JOIN activities a ON sa.activity_id = a.id AND a.actif = TRUE
+             LEFT JOIN student_subactivities ss ON e.id = ss.student_id AND a.id = ss.activity_id
+             LEFT JOIN subactivities s ON ss.subactivity_id = s.id AND s.actif = TRUE
+             WHERE e.userId IS NOT NULL
+             ORDER BY e.nom, e.prenom, a.nom, s.nom`
+        );
+
+        // Structurer les données par étudiant
+        const studentsMap = new Map();
+
+        students.forEach(row => {
+            const studentId = row.student_id;
+
+            if (!studentsMap.has(studentId)) {
+                studentsMap.set(studentId, {
+                    id: studentId,
+                    nom: row.nom,
+                    prenom: row.prenom,
+                    email: row.email,
+                    photo: row.photo,
+                    annee: row.annee,
+                    ecole_id: row.ecoleId,
+                    ecole_nom: row.ecole_nom,
+                    filiere_id: row.filiereId,
+                    filiere_nom: row.filiere_nom,
+                    activities: [],
+                    actif: row.actif
+                });
+            }
+
+            const student = studentsMap.get(studentId);
+
+            // Ajouter l'activité si elle existe
+            if (row.category_id) {
+                let activity = student.activities.find(a => a.id === row.category_id);
+
+                if (!activity) {
+                    activity = {
+                        id: row.category_id,
+                        nom: row.category_name,
+                        icone: row.category_icon,
+                        date_inscription: row.date_inscription,
+                        subactivities: []
+                    };
+                    student.activities.push(activity);
+                }
+
+                // Ajouter la sous-activité si elle existe
+                if (row.subactivity_id) {
+                    const subactivityExists = activity.subactivities.some(s => s.id === row.subactivity_id);
+                    if (!subactivityExists) {
+                        activity.subactivities.push({
+                            id: row.subactivity_id,
+                            nom: row.subactivity_name,
+                            icone: row.subactivity_icon,
+                            date_inscription: row.subactivity_date_inscription
+                        });
+                    }
+                }
+            }
+        });
+
+        const formattedStudents = Array.from(studentsMap.values());
+
+        res.json({
+            success: true,
+            data: formattedStudents
+        });
+
+    } catch (error) {
+        console.error('Erreur récupération étudiants avec activités:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la récupération des étudiants avec leurs activités'
+        });
+    }
+});
+
+// Version simplifiée pour l'affichage en tableau
+router.get('/students', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const [students] = await pool.execute(
+            `SELECT 
+                e.id as student_id,
+                e.nom,
+                e.prenom,
+                e.email,
+                e.photo,
+                e.annee,
+                e.ecoleId,
+                e.filiereId,
+                ec.nom as ecole_nom,
+                f.nom as filiere_nom,
+                a.id as category_id,
+                a.nom as category_name,
+                a.icone as category_icon,
+                s.id as subactivity_id,
+                s.nom as subactivity_name,
+                s.icone as subactivity_icon,
+                sa.created_at as date_inscription,
+                sa.actif
+             FROM etudiants e
+             INNER JOIN ecoles ec ON e.ecoleId = ec.id
+             INNER JOIN filieres f ON e.filiereId = f.id
+             LEFT JOIN student_activities sa ON e.id = sa.student_id
+             LEFT JOIN activities a ON sa.activity_id = a.id AND a.actif = TRUE
+             LEFT JOIN student_subactivities ss ON e.id = ss.student_id AND a.id = ss.activity_id
+             LEFT JOIN subactivities s ON ss.subactivity_id = s.id AND s.actif = TRUE
+             WHERE e.userId IS NOT NULL
+             ORDER BY e.nom, e.prenom, a.nom, s.nom`
+        );
+
+        // Pour l'affichage en tableau, on duplique les lignes pour chaque combinaison étudiant-activité-sous-activité
+        const tableData = students.map(row => ({
+            student_id: row.student_id,
+            nom: row.nom,
+            prenom: row.prenom,
+            email: row.email,
+            photo: row.photo,
+            annee: row.annee,
+            ecole_id: row.ecoleId,
+            ecole_nom: row.ecole_nom,
+            filiere_id: row.filiereId,
+            filiere_nom: row.filiere_nom,
+            category_id: row.category_id,
+            category_name: row.category_name,
+            category_icon: row.category_icon,
+            subactivity_id: row.subactivity_id,
+            subactivity_name: row.subactivity_name,
+            subactivity_icon: row.subactivity_icon,
+            date_inscription: row.date_inscription,
+            actif: row.actif
+        }));
+
+        res.json({
+            success: true,
+            data: tableData
+        });
+
+    } catch (error) {
+        console.error('Erreur récupération étudiants:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la récupération des étudiants'
+        });
+    }
+});
+
+// Exportation des données étudiants-activités
+router.get('/export/students', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { format = 'csv' } = req.query;
+
+        const [students] = await pool.execute(
+            `SELECT 
+                e.nom,
+                e.prenom,
+                e.email,
+                e.annee,
+                ec.nom as ecole,
+                f.nom as filiere,
+                a.nom as activite_principale,
+                s.nom as sous_activite,
+                sa.created_at as date_inscription,
+                CASE WHEN sa.actif = 1 THEN 'Actif' ELSE 'Inactif' END as statut
+             FROM etudiants e
+             INNER JOIN ecoles ec ON e.ecoleId = ec.id
+             INNER JOIN filieres f ON e.filiereId = f.id
+             LEFT JOIN student_activities sa ON e.id = sa.student_id
+             LEFT JOIN activities a ON sa.activity_id = a.id AND a.actif = TRUE
+             LEFT JOIN student_subactivities ss ON e.id = ss.student_id AND a.id = ss.activity_id
+             LEFT JOIN subactivities s ON ss.subactivity_id = s.id AND s.actif = TRUE
+             WHERE e.userId IS NOT NULL
+             ORDER BY e.nom, e.prenom, a.nom, s.nom`
+        );
+
+        if (format === 'csv') {
+            // Générer CSV
+            const headers = ['Nom', 'Prénom', 'Email', 'Année', 'École', 'Filière', 'Activité Principale', 'Sous-Activité', 'Date Inscription', 'Statut'];
+            let csvContent = headers.join(';') + '\n';
+
+            students.forEach(row => {
+                const line = [
+                    `"${row.nom || ''}"`,
+                    `"${row.prenom || ''}"`,
+                    `"${row.email || ''}"`,
+                    `"${row.annee || ''}"`,
+                    `"${row.ecole || ''}"`,
+                    `"${row.filiere || ''}"`,
+                    `"${row.activite_principale || ''}"`,
+                    `"${row.sous_activite || ''}"`,
+                    `"${row.date_inscription ? new Date(row.date_inscription).toLocaleDateString('fr-FR') : ''}"`,
+                    `"${row.statut || ''}"`
+                ];
+                csvContent += line.join(';') + '\n';
+            });
+
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', 'attachment; filename=etudiants_activites.csv');
+            res.send(csvContent);
+
+        } else if (format === 'excel') {
+            // Pour Excel, vous pouvez utiliser une bibliothèque comme exceljs
+            // Pour l'instant, retourner un CSV avec extension xlsx
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', 'attachment; filename=etudiants_activites.xlsx');
+            // Implémentation Excel à compléter avec exceljs
+            res.json({
+                success: true,
+                message: 'Export Excel à implémenter',
+                data: students
+            });
+
+        } else if (format === 'pdf') {
+            // Pour PDF, vous pouvez utiliser une bibliothèque comme pdfkit
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', 'attachment; filename=etudiants_activites.pdf');
+            // Implémentation PDF à compléter avec pdfkit
+            res.json({
+                success: true,
+                message: 'Export PDF à implémenter',
+                data: students
+            });
+
+        } else {
+            res.status(400).json({
+                success: false,
+                message: 'Format d\'export non supporté'
+            });
+        }
+
+    } catch (error) {
+        console.error('Erreur exportation étudiants:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors de l\'exportation des données'
+        });
+    }
+});
+
+// Récupérer les statistiques complètes pour le dashboard
+router.get('/dashboard/stats', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        // Nombre total d'étudiants inscrits
+        const [totalStudentsResult] = await pool.execute(
+            'SELECT COUNT(*) as total FROM etudiants WHERE userId IS NOT NULL'
+        );
+
+        // Nombre total de catégories
+        const [totalCategoriesResult] = await pool.execute(
+            'SELECT COUNT(*) as total FROM activities WHERE actif = TRUE'
+        );
+
+        // Nombre total de sous-activités
+        const [totalSubactivitiesResult] = await pool.execute(
+            'SELECT COUNT(*) as total FROM subactivities WHERE actif = TRUE'
+        );
+
+        // Taux de participation (étudiants avec au moins une activité)
+        const [participationResult] = await pool.execute(
+            `SELECT COUNT(DISTINCT e.id) as participants
+             FROM etudiants e
+             INNER JOIN student_activities sa ON e.id = sa.student_id
+             WHERE e.userId IS NOT NULL`
+        );
+
+        const totalStudents = totalStudentsResult[0].total;
+        const participationRate = totalStudents > 0
+            ? Math.round((participationResult[0].participants / totalStudents) * 100)
+            : 0;
+
+        res.json({
+            success: true,
+            data: {
+                totalStudents: totalStudents,
+                totalCategories: totalCategoriesResult[0].total,
+                totalSubactivities: totalSubactivitiesResult[0].total,
+                participationRate: participationRate
+            }
+        });
+
+    } catch (error) {
+        console.error('Erreur récupération statistiques dashboard:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la récupération des statistiques'
+        });
+    }
+});
+
 export default router;
