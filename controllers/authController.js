@@ -39,24 +39,20 @@ class AuthController {
 
             // NOUVELLE LOGIQUE : Si l'utilisateur existe mais n'a pas de password
             if (user.id && !user.password) {
-                // Créer le password avec celui fourni par l'étudiant
                 const hashedPassword = await authService.hashPassword(password);
 
                 let connection;
                 try {
                     connection = await pool.getConnection();
                     await connection.execute(
-                        'UPDATE users SET password = ? WHERE id = ?',
+                        'UPDATE users SET password = ?, requirePasswordChange = FALSE WHERE id = ?',
                         [hashedPassword, user.id]
                     );
 
-                    // Maintenant recharger l'utilisateur avec le nouveau password
                     const updatedUser = await authService.findUser(identifier);
                     if (!updatedUser) {
                         throw new Error('Erreur lors de la mise à jour du mot de passe');
                     }
-
-                    // Remplacer user par updatedUser
                     Object.assign(user, updatedUser);
                 } finally {
                     if (connection) await connection.release();
@@ -65,7 +61,6 @@ class AuthController {
 
             // Ancienne logique (pour les étudiants sans user)
             if (user.student && !user.id) {
-                // [Garder l'ancien code pour la rétrocompatibilité]
                 const emailToUse = user.student.email || `${user.student.matricule || user.student.codeInscription || user.student.identifiantTemporaire}@no-email.local`;
                 const newUserId = await userService.createUser({
                     email: emailToUse,
@@ -89,7 +84,9 @@ class AuthController {
                 });
             }
 
-            // Vérifier mot de passe temporaire
+            // VÉRIFICATION PRINCIPALE : Mot de passe temporaire OU requirePasswordChange
+            const requirePasswordChange = user.requirePasswordChange || user.tempPassword;
+
             if (user.tempPassword) {
                 const validTempPassword = await authService.verifyPassword(password, user.tempPassword);
                 if (validTempPassword) {
@@ -99,7 +96,7 @@ class AuthController {
                             role: user.role,
                             requirePasswordChange: true
                         },
-                        '1h'
+                        '1h' // Token court pour forcer le changement
                     );
 
                     return res.json({
@@ -118,7 +115,7 @@ class AuthController {
                 }
             }
 
-            // Vérifier mot de passe normal - MAINTENANT ça devrait fonctionner
+            // Vérifier mot de passe normal
             const validPassword = await authService.verifyPassword(password, user.password);
             if (!validPassword) {
                 return res.status(401).json({
@@ -127,11 +124,24 @@ class AuthController {
                 });
             }
 
-            const token = authService.generateToken({
-                id: user.id,
-                role: user.role,
-                requirePasswordChange: user.requirePasswordChange || false
-            });
+            // Si requirePasswordChange est TRUE, générer un token spécial
+            let token;
+            if (requirePasswordChange) {
+                token = authService.generateToken(
+                    {
+                        id: user.id,
+                        role: user.role,
+                        requirePasswordChange: true
+                    },
+                    '1h' // Token court pour forcer le changement
+                );
+            } else {
+                token = authService.generateToken({
+                    id: user.id,
+                    role: user.role,
+                    requirePasswordChange: false
+                });
+            }
 
             let studentInfo = {};
             if (user.role === 'ETUDIANT') {
@@ -140,10 +150,12 @@ class AuthController {
 
             res.json({
                 success: true,
-                message: 'Connexion réussie',
+                message: requirePasswordChange
+                    ? 'Connexion réussie - Changement de mot de passe requis'
+                    : 'Connexion réussie',
                 data: {
                     token,
-                    requirePasswordChange: user.requirePasswordChange || false,
+                    requirePasswordChange: requirePasswordChange,
                     user: {
                         id: user.id,
                         email: user.email,
