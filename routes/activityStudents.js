@@ -619,7 +619,7 @@ router.get('/students/all/with-activities', authenticateToken, requireAdmin, asy
                 e.id as student_id,
                 e.nom,
                 e.prenom,
-                e.email,
+                u.email,
                 e.photo,
                 e.annee,
                 e.ecoleId,
@@ -636,6 +636,7 @@ router.get('/students/all/with-activities', authenticateToken, requireAdmin, asy
                 s.icone as subactivity_icon,
                 ss.created_at as subactivity_date_inscription
              FROM etudiants e
+             INNER JOIN users u ON e.userId = u.id
              INNER JOIN ecoles ec ON e.ecoleId = ec.id
              INNER JOIN filieres f ON e.filiereId = f.id
              LEFT JOIN student_activities sa ON e.id = sa.student_id
@@ -721,34 +722,35 @@ router.get('/students/all/with-activities', authenticateToken, requireAdmin, asy
 router.get('/students', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const [students] = await pool.execute(
-            `SELECT 
-                e.id as student_id,
-                e.nom,
-                e.prenom,
-                e.email,
-                e.photo,
-                e.annee,
-                e.ecoleId,
-                e.filiereId,
-                ec.nom as ecole_nom,
-                f.nom as filiere_nom,
-                a.id as category_id,
-                a.nom as category_name,
-                a.icone as category_icon,
-                s.id as subactivity_id,
-                s.nom as subactivity_name,
-                s.icone as subactivity_icon,
-                sa.created_at as date_inscription,
-                sa.actif
-             FROM etudiants e
-             INNER JOIN ecoles ec ON e.ecoleId = ec.id
-             INNER JOIN filieres f ON e.filiereId = f.id
-             LEFT JOIN student_activities sa ON e.id = sa.student_id
-             LEFT JOIN activities a ON sa.activity_id = a.id AND a.actif = TRUE
-             LEFT JOIN student_subactivities ss ON e.id = ss.student_id AND a.id = ss.activity_id
-             LEFT JOIN subactivities s ON ss.subactivity_id = s.id AND s.actif = TRUE
-             WHERE e.userId IS NOT NULL
-             ORDER BY e.nom, e.prenom, a.nom, s.nom`
+            `SELECT
+  e.id as student_id,
+  e.nom,
+  e.prenom,
+  u.email,
+  e.photoUrl as photo,
+  e.annee,
+  e.ecoleId,
+  e.filiereId,
+  ec.nom as ecole_nom,
+  f.nom as filiere_nom,
+  a.id as category_id,
+  a.nom as category_name,
+  a.icone as category_icon,
+  s.id as subactivity_id,
+  s.nom as subactivity_name,
+  s.icone as subactivity_icon,
+  sa.created_at as date_inscription,
+  sa.actif
+FROM etudiants e
+INNER JOIN users u ON e.userId = u.id
+INNER JOIN ecoles ec ON e.ecoleId = ec.id
+INNER JOIN filieres f ON e.filiereId = f.id
+LEFT JOIN student_activities sa ON e.id = sa.student_id
+LEFT JOIN activities a ON sa.activity_id = a.id AND a.actif = TRUE
+LEFT JOIN student_subactivities ss ON e.id = ss.student_id AND a.id = ss.activity_id
+LEFT JOIN subactivities s ON ss.subactivity_id = s.id AND s.actif = TRUE
+WHERE e.userId IS NOT NULL
+ORDER BY e.nom, e.prenom, a.nom, s.nom`
         );
 
         // Pour l'affichage en tableau, on duplique les lignes pour chaque combinaison étudiant-activité-sous-activité
@@ -796,7 +798,7 @@ router.get('/export/students', authenticateToken, requireAdmin, async (req, res)
             `SELECT 
                 e.nom,
                 e.prenom,
-                e.email,
+                u.email,
                 e.annee,
                 ec.nom as ecole,
                 f.nom as filiere,
@@ -805,6 +807,7 @@ router.get('/export/students', authenticateToken, requireAdmin, async (req, res)
                 sa.created_at as date_inscription,
                 CASE WHEN sa.actif = 1 THEN 'Actif' ELSE 'Inactif' END as statut
              FROM etudiants e
+             INNER JOIN users u ON e.userId = u.id
              INNER JOIN ecoles ec ON e.ecoleId = ec.id
              INNER JOIN filieres f ON e.filiereId = f.id
              LEFT JOIN student_activities sa ON e.id = sa.student_id
