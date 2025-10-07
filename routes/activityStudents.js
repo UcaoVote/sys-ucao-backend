@@ -806,16 +806,15 @@ router.get('/export/students', authenticateToken, requireAdmin, async (req, res)
   s.nom AS sous_activite,
   sa.created_at AS date_inscription
 FROM etudiants e
-INNER JOIN utilisateurs u ON e.userId = u.id
+INNER JOIN users u ON e.userId = u.id
 INNER JOIN ecoles ec ON e.ecoleId = ec.id
 INNER JOIN filieres f ON e.filiereId = f.id
 LEFT JOIN student_activities sa ON e.id = sa.student_id
 LEFT JOIN activities a ON sa.activity_id = a.id AND a.actif = TRUE
-LEFT JOIN student_subactivities ss ON e.id = ss.student_id AND a.id = ss.activity_id
+LEFT JOIN student_subactivities ss ON e.id = ss.student_id AND sa.activity_id = ss.activity_id
 LEFT JOIN subactivities s ON ss.subactivity_id = s.id AND s.actif = TRUE
 WHERE e.userId IS NOT NULL
-ORDER BY e.nom, e.prenom, a.nom, s.nom;
-`
+ORDER BY e.nom, e.prenom, a.nom, s.nom;`
         );
 
         if (format === 'csv') {
