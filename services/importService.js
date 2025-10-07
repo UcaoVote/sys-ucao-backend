@@ -111,6 +111,21 @@ export const importService = {
                     params.push(etudiant.codeInscription);
                 }
 
+                if (etudiant.email) {
+                    // Vérifier aussi les doublons d'email dans users
+                    const [existingEmail] = await connection.execute(
+                        'SELECT id FROM users WHERE email = ?',
+                        [etudiant.email]
+                    );
+                    if (existingEmail.length > 0) {
+                        doublons.push({
+                            etudiant: etudiant,
+                            existants: [{ type: 'email', value: etudiant.email }]
+                        });
+                        continue;
+                    }
+                }
+
                 if (conditions.length === 0) continue;
 
                 const query = `
@@ -146,7 +161,41 @@ export const importService = {
 
             for (const etudiant of etudiants) {
                 try {
-                    // Trouver l'école par nom
+                    // 1. Vérifier les doublons d'email dans users
+                    if (etudiant.email) {
+                        const [existingEmail] = await connection.execute(
+                            'SELECT id FROM users WHERE email = ?',
+                            [etudiant.email]
+                        );
+                        if (existingEmail.length > 0) {
+                            throw new Error('Email déjà utilisé par un autre utilisateur');
+                        }
+                    }
+
+                    // 2. Vérifier les doublons dans etudiants
+                    const conditions = [];
+                    const params = [];
+
+                    if (etudiant.matricule) {
+                        conditions.push('matricule = ?');
+                        params.push(etudiant.matricule);
+                    }
+                    if (etudiant.codeInscription) {
+                        conditions.push('codeInscription = ?');
+                        params.push(etudiant.codeInscription);
+                    }
+
+                    if (conditions.length > 0) {
+                        const [existing] = await connection.execute(
+                            `SELECT id FROM etudiants WHERE ${conditions.join(' OR ')}`,
+                            params
+                        );
+                        if (existing.length > 0) {
+                            throw new Error('Étudiant déjà existant (doublon)');
+                        }
+                    }
+
+                    // 3. Trouver l'école par nom
                     const [ecoleRows] = await connection.execute(
                         'SELECT id FROM ecoles WHERE nom = ? AND actif = 1',
                         [etudiant.ecole]
@@ -158,7 +207,7 @@ export const importService = {
 
                     const ecoleId = ecoleRows[0].id;
 
-                    // Trouver la filière par nom et école
+                    // 4. Trouver la filière par nom et école
                     const [filiereRows] = await connection.execute(
                         'SELECT id FROM filieres WHERE nom = ? AND ecoleId = ? AND actif = 1',
                         [etudiant.filiere, ecoleId]
@@ -170,15 +219,28 @@ export const importService = {
 
                     const filiereId = filiereRows[0].id;
 
-                    // Générer un identifiant temporaire unique
+                    // 5. Générer un identifiant temporaire unique
                     const identifiantTemporaire = this.genererIdentifiantTemporaire();
 
-                    // Insérer l'étudiant
+                    // 6. Générer un email si non fourni
+                    const email = etudiant.email || `${etudiant.matricule || etudiant.codeInscription || identifiantTemporaire}@ucao-temp.local`;
+
+                    // 7. Créer le COMPTE USER (avec email, sans mot de passe)
+                    const userId = this.genererUserId();
+
+                    await connection.execute(
+                        `INSERT INTO users (id, email, role, actif, requirePasswordChange, createdAt) 
+                         VALUES (?, ?, 'ETUDIANT', TRUE, TRUE, NOW())`,
+                        [userId, email]
+                    );
+
+                    // 8. Créer l'ÉTUDIANT (lié au user)
                     const [result] = await connection.execute(
                         `INSERT INTO etudiants 
-                         (matricule, codeInscription, identifiantTemporaire, nom, prenom, annee, ecoleId, filiereId, whatsapp, email) 
+                         (userId, matricule, codeInscription, identifiantTemporaire, nom, prenom, annee, ecoleId, filiereId, whatsapp) 
                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                         [
+                            userId, // Lien vers users
                             etudiant.matricule,
                             etudiant.codeInscription,
                             identifiantTemporaire,
@@ -187,18 +249,21 @@ export const importService = {
                             etudiant.annee,
                             ecoleId,
                             filiereId,
-                            etudiant.whatsapp,
-                            etudiant.email
+                            etudiant.whatsapp
                         ]
                     );
 
                     importes.push({
                         id: result.insertId,
+                        userId: userId,
                         identifiantTemporaire: identifiantTemporaire,
                         nom: etudiant.nom,
                         prenom: etudiant.prenom,
+                        email: email,
                         matricule: etudiant.matricule,
-                        codeInscription: etudiant.codeInscription
+                        codeInscription: etudiant.codeInscription,
+                        ecole: etudiant.ecole,
+                        filiere: etudiant.filiere
                     });
 
                 } catch (error) {
@@ -224,5 +289,9 @@ export const importService = {
         const timestamp = Date.now().toString(36);
         const random = Math.random().toString(36).substring(2, 8);
         return `TEMP${timestamp}${random}`.toUpperCase();
+    },
+
+    genererUserId() {
+        return `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
 };
