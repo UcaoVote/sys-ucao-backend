@@ -76,6 +76,17 @@ class AuthService {
 
                 if (rows.length > 0) {
                     const r = rows[0];
+
+                    // DEBUG COMPLET requirePasswordChange
+                    console.log('🔐 DEBUG COMPLET requirePasswordChange:', {
+                        rawValue: r.requirePasswordChange,
+                        type: typeof r.requirePasswordChange,
+                        isNull: r.requirePasswordChange === null,
+                        isZero: r.requirePasswordChange === 0,
+                        isOne: r.requirePasswordChange === 1,
+                        booleanConverted: Boolean(r.requirePasswordChange)
+                    });
+
                     const student = {
                         id: r.student_id,
                         userId: r.student_userId,
@@ -92,15 +103,15 @@ class AuthService {
                     };
 
                     if (r.user_id) {
-                        // CORRECTION ICI : Convertir null en false
-                        const requirePasswordChange = r.requirePasswordChange === 1 ? true : false;
+                        // CORRECTION ICI - Conversion correcte de requirePasswordChange
+                        const requirePasswordChange = r.requirePasswordChange === 1 || r.requirePasswordChange === true;
 
                         return {
                             id: r.user_id,
                             email: r.user_email,
                             password: r.user_password,
                             tempPassword: r.tempPassword,
-                            requirePasswordChange: requirePasswordChange, // Utiliser la valeur convertie
+                            requirePasswordChange: requirePasswordChange,
                             actif: r.actif,
                             role: r.role,
                             student
@@ -127,15 +138,25 @@ class AuthService {
             if (userRows.length > 0) {
                 const r = userRows[0];
 
-                // CORRECTION ICI : Convertir null en false
-                const requirePasswordChange = r.requirePasswordChange === 1 ? true : false;
+                // DEBUG COMPLET requirePasswordChange
+                console.log('🔐 DEBUG COMPLET requirePasswordChange (users):', {
+                    rawValue: r.requirePasswordChange,
+                    type: typeof r.requirePasswordChange,
+                    isNull: r.requirePasswordChange === null,
+                    isZero: r.requirePasswordChange === 0,
+                    isOne: r.requirePasswordChange === 1,
+                    booleanConverted: Boolean(r.requirePasswordChange)
+                });
+
+                // CORRECTION ICI - Conversion correcte de requirePasswordChange
+                const requirePasswordChange = r.requirePasswordChange === 1 || r.requirePasswordChange === true;
 
                 const user = {
                     id: r.id,
                     email: r.email,
                     password: r.password,
                     tempPassword: r.tempPassword,
-                    requirePasswordChange: requirePasswordChange, // Utiliser la valeur convertie
+                    requirePasswordChange: requirePasswordChange,
                     actif: r.actif,
                     role: r.role,
                     createdAt: r.createdAt
