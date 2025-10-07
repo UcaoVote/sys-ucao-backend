@@ -25,7 +25,22 @@ router.get('/all/with-subactivities', activityController.getAllWithSubactivities
 // Récupérer les activités de l'étudiant connecté
 router.get('/my-activities', authenticateToken, async (req, res) => {
     try {
-        const studentId = req.user.id;
+        const userId = req.user.id;
+
+        // Récupérer l'ID étudiant à partir de l'ID utilisateur
+        const [etudiantRows] = await pool.execute(
+            'SELECT id FROM etudiants WHERE userId = ?',
+            [userId]
+        );
+
+        if (etudiantRows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Profil étudiant non trouvé'
+            });
+        }
+
+        const studentId = etudiantRows[0].id;
 
         const [activities] = await pool.execute(
             `SELECT a.id, a.nom, a.description, a.icone, sa.created_at
@@ -55,7 +70,22 @@ router.put('/my-activities', authenticateToken, async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        const studentId = req.user.id;
+        const userId = req.user.id;
+
+        // Récupérer l'ID étudiant à partir de l'ID utilisateur
+        const [etudiantRows] = await connection.execute(
+            'SELECT id FROM etudiants WHERE userId = ?',
+            [userId]
+        );
+
+        if (etudiantRows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Profil étudiant non trouvé'
+            });
+        }
+
+        const studentId = etudiantRows[0].id;
         const { activities } = req.body;
 
         if (!activities || !Array.isArray(activities)) {
@@ -94,7 +124,7 @@ router.put('/my-activities', authenticateToken, async (req, res) => {
             );
         }
 
-        // Gérer les sous-activités si fournies (format attendu: { activityId: [subId, ...], ... })
+        // Gérer les sous-activités si fournies
         const { subactivities } = req.body;
         if (subactivities && typeof subactivities === 'object') {
             // Supprimer les sous-activités existantes
