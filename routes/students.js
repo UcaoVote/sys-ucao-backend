@@ -12,7 +12,7 @@ const router = express.Router();
 router.get('/', authenticateToken, async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
-        const limit = 50; // pagination fixe à 50 par page
+        const limit = 50;
 
         const students = await studentManager.getAllStudents();
         const paginated = paginateResults(students, page, limit);

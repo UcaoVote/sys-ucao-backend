@@ -1,17 +1,20 @@
 import pool from '../dbconfig.js'
-// 1. Lister tous les étudiants (Validé)
+// 1. Lister tous les étudiants 
 async function getAllStudents() {
     try {
         const [rows] = await pool.execute(`
             SELECT 
                 e.id, 
-                e.matricule, 
+                e.matricule,
+                e.codeInscription,
                 e.nom, 
                 e.prenom, 
                 f.nom AS nomFiliere,
                 ec.nom AS nomEcole,
                 e.annee, 
                 u.email,
+                e.identifiantTemporaire,
+                u.tempPassword,
                 u.actif,
                 u.createdAt
             FROM etudiants e
