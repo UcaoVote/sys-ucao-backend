@@ -34,86 +34,71 @@ class AuthService {
         try {
             connection = await pool.getConnection();
 
-            console.log('🔍 === DÉBUT RECHERCHE ===');
+            console.log('🔍 === DEBUG CARACTÈRES ===');
             console.log('IDENTIFIANT REÇU:', `"${identifier}"`);
             console.log('LONGUEUR:', identifier.length);
-            console.log('CARACTÈRES:');
+            console.log('CODE HEXADÉCIMAL:');
             for (let i = 0; i < identifier.length; i++) {
-                console.log(`  [${i}]: "${identifier[i]}" (code: ${identifier.charCodeAt(i)})`);
+                const char = identifier[i];
+                const code = identifier.charCodeAt(i);
+                console.log(`  [${i}]: "${char}" -> Code: ${code} (0x${code.toString(16)})`);
             }
 
-            // Test 1: Recherche exacte du matricule
+            // Nettoyer l'identifiant des caractères invisibles
+            const cleanedIdentifier = identifier.replace(/[^\x20-\x7E]/g, '').trim();
+            console.log('🧹 IDENTIFIANT NETTOYÉ:', `"${cleanedIdentifier}"`);
+
+            // Test avec l'identifiant nettoyé
             const [exactMatch] = await connection.execute(
                 'SELECT matricule FROM etudiants WHERE matricule = ?',
-                [identifier]
+                [cleanedIdentifier]
             );
-            console.log('🎯 RECHERCHE EXACTE:', exactMatch);
+            console.log('🎯 RECHERCHE AVEC NETTOYAGE:', exactMatch);
 
-            // Test 2: Recherche avec LIKE (au cas où)
-            const [likeMatch] = await connection.execute(
-                'SELECT matricule FROM etudiants WHERE matricule LIKE ?',
-                [`%${identifier}%`]
-            );
-            console.log('🎯 RECHERCHE LIKE:', likeMatch);
+            if (exactMatch.length > 0) {
+                console.log('✅ MATRICULE TROUVÉ APRÈS NETTOYAGE!');
 
-            // Test 3: Voir tous les matricules existants
-            const [allMatricules] = await connection.execute(
-                'SELECT matricule FROM etudiants WHERE matricule IS NOT NULL'
-            );
-            console.log('📋 TOUS LES MATRICULES EXISTANTS:', allMatricules);
+                // Maintenant exécuter la requête principale avec l'identifiant nettoyé
+                const [rows] = await connection.execute(
+                    `SELECT u.id as user_id, u.email as user_email, u.password as user_password, 
+                        e.id as student_id, e.userId as student_userId, e.matricule, e.codeInscription, 
+                        e.identifiantTemporaire, e.nom as student_nom, e.prenom as student_prenom
+                 FROM etudiants e
+                 LEFT JOIN users u ON e.userId = u.id
+                 WHERE e.matricule = ?
+                 LIMIT 1`,
+                    [cleanedIdentifier]
+                );
 
-            // REQUÊTE PRINCIPALE
-            console.log('🚀 EXÉCUTION REQUÊTE PRINCIPALE...');
-            const [rows] = await connection.execute(
-                `SELECT u.id as user_id, u.email as user_email, u.password as user_password, 
-                    e.id as student_id, e.userId as student_userId, e.matricule, e.codeInscription, 
-                    e.identifiantTemporaire, e.nom as student_nom, e.prenom as student_prenom
-             FROM etudiants e
-             LEFT JOIN users u ON e.userId = u.id
-             WHERE e.identifiantTemporaire = ? OR e.matricule = ? OR e.codeInscription = ?
-             LIMIT 1`,
-                [identifier, identifier, identifier]
-            );
+                if (rows.length > 0) {
+                    const r = rows[0];
+                    const student = {
+                        id: r.student_id,
+                        userId: r.student_userId,
+                        matricule: r.matricule,
+                        codeInscription: r.codeInscription,
+                        identifiantTemporaire: r.identifiantTemporaire,
+                        nom: r.student_nom,
+                        prenom: r.student_prenom
+                    };
 
-            console.log('🎓 RÉSULTAT REQUÊTE PRINCIPALE:', rows);
-
-            if (!rows || rows.length === 0) {
-                console.log('❌ AUCUN RÉSULTAT DANS LA REQUÊTE PRINCIPALE');
-                return null;
+                    if (r.user_id) {
+                        return {
+                            id: r.user_id,
+                            email: r.user_email,
+                            password: r.user_password,
+                            tempPassword: null,
+                            requirePasswordChange: false,
+                            actif: true,
+                            role: 'ETUDIANT',
+                            student
+                        };
+                    }
+                    return { student };
+                }
             }
 
-            const r = rows[0];
-            console.log('✅ DONNÉES TROUVÉES:', {
-                matricule: r.matricule,
-                identifiantTemporaire: r.identifiantTemporaire,
-                userId: r.user_id,
-                userEmail: r.user_email
-            });
-
-            const student = {
-                id: r.student_id,
-                userId: r.student_userId,
-                matricule: r.matricule,
-                codeInscription: r.codeInscription,
-                identifiantTemporaire: r.identifiantTemporaire,
-                nom: r.student_nom,
-                prenom: r.student_prenom
-            };
-
-            if (r.user_id) {
-                return {
-                    id: r.user_id,
-                    email: r.user_email,
-                    password: r.user_password,
-                    tempPassword: null,
-                    requirePasswordChange: false,
-                    actif: true,
-                    role: 'ETUDIANT',
-                    student
-                };
-            }
-
-            return { student };
+            return null;
 
         } catch (error) {
             console.error('💥 ERREUR findUser:', error);
