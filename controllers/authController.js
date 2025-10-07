@@ -84,8 +84,13 @@ class AuthController {
                 });
             }
 
-            // VÉRIFICATION PRINCIPALE : Mot de passe temporaire OU requirePasswordChange
-            const requirePasswordChange = user.requirePasswordChange || user.tempPassword;
+            // CORRECTION ICI : S'assurer que requirePasswordChange est un boolean
+            const requirePasswordChange = Boolean(user.requirePasswordChange || user.tempPassword);
+            console.log('🔐 DEBUG requirePasswordChange:', {
+                userRequirePasswordChange: user.requirePasswordChange,
+                userTempPassword: user.tempPassword,
+                finalValue: requirePasswordChange
+            });
 
             if (user.tempPassword) {
                 const validTempPassword = await authService.verifyPassword(password, user.tempPassword);
@@ -96,7 +101,7 @@ class AuthController {
                             role: user.role,
                             requirePasswordChange: true
                         },
-                        '1h' // Token court pour forcer le changement
+                        '1h'
                     );
 
                     return res.json({
@@ -133,7 +138,7 @@ class AuthController {
                         role: user.role,
                         requirePasswordChange: true
                     },
-                    '1h' // Token court pour forcer le changement
+                    '1h'
                 );
             } else {
                 token = authService.generateToken({
@@ -155,7 +160,7 @@ class AuthController {
                     : 'Connexion réussie',
                 data: {
                     token,
-                    requirePasswordChange: requirePasswordChange,
+                    requirePasswordChange: requirePasswordChange, // Boolean garanti
                     user: {
                         id: user.id,
                         email: user.email,

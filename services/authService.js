@@ -92,12 +92,15 @@ class AuthService {
                     };
 
                     if (r.user_id) {
+                        // CORRECTION ICI : Convertir null en false
+                        const requirePasswordChange = r.requirePasswordChange === 1 ? true : false;
+
                         return {
                             id: r.user_id,
                             email: r.user_email,
                             password: r.user_password,
                             tempPassword: r.tempPassword,
-                            requirePasswordChange: r.requirePasswordChange,
+                            requirePasswordChange: requirePasswordChange, // Utiliser la valeur convertie
                             actif: r.actif,
                             role: r.role,
                             student
@@ -123,12 +126,16 @@ class AuthService {
 
             if (userRows.length > 0) {
                 const r = userRows[0];
+
+                // CORRECTION ICI : Convertir null en false
+                const requirePasswordChange = r.requirePasswordChange === 1 ? true : false;
+
                 const user = {
                     id: r.id,
                     email: r.email,
                     password: r.password,
                     tempPassword: r.tempPassword,
-                    requirePasswordChange: r.requirePasswordChange,
+                    requirePasswordChange: requirePasswordChange, // Utiliser la valeur convertie
                     actif: r.actif,
                     role: r.role,
                     createdAt: r.createdAt
