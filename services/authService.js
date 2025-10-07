@@ -29,30 +29,45 @@ class AuthService {
         return jwt.verify(token, JWT_SECRET);
     }
 
-    // Trouver un utilisateur par email ou identifiant
     async findUser(identifier) {
         let connection;
         try {
             connection = await pool.getConnection();
 
-            console.log('🔍 Recherche utilisateur avec identifiant:', identifier);
-
-            if (identifier.includes('@')) {
-                const [userRows] = await connection.execute(
-                    'SELECT * FROM users WHERE email = ?',
-                    [identifier]
-                );
-                console.log('📧 Résultat recherche email:', userRows[0]);
-                return userRows[0] || null;
+            console.log('🔍 === DÉBUT RECHERCHE ===');
+            console.log('IDENTIFIANT REÇU:', `"${identifier}"`);
+            console.log('LONGUEUR:', identifier.length);
+            console.log('CARACTÈRES:');
+            for (let i = 0; i < identifier.length; i++) {
+                console.log(`  [${i}]: "${identifier[i]}" (code: ${identifier.charCodeAt(i)})`);
             }
 
+            // Test 1: Recherche exacte du matricule
+            const [exactMatch] = await connection.execute(
+                'SELECT matricule FROM etudiants WHERE matricule = ?',
+                [identifier]
+            );
+            console.log('🎯 RECHERCHE EXACTE:', exactMatch);
+
+            // Test 2: Recherche avec LIKE (au cas où)
+            const [likeMatch] = await connection.execute(
+                'SELECT matricule FROM etudiants WHERE matricule LIKE ?',
+                [`%${identifier}%`]
+            );
+            console.log('🎯 RECHERCHE LIKE:', likeMatch);
+
+            // Test 3: Voir tous les matricules existants
+            const [allMatricules] = await connection.execute(
+                'SELECT matricule FROM etudiants WHERE matricule IS NOT NULL'
+            );
+            console.log('📋 TOUS LES MATRICULES EXISTANTS:', allMatricules);
+
+            // REQUÊTE PRINCIPALE
+            console.log('🚀 EXÉCUTION REQUÊTE PRINCIPALE...');
             const [rows] = await connection.execute(
                 `SELECT u.id as user_id, u.email as user_email, u.password as user_password, 
-                    u.tempPassword as user_tempPassword, u.requirePasswordChange as user_requirePasswordChange, 
-                    u.actif as user_actif, u.role as user_role,
                     e.id as student_id, e.userId as student_userId, e.matricule, e.codeInscription, 
-                    e.identifiantTemporaire, e.nom as student_nom, e.prenom as student_prenom, 
-                    e.filiereId, e.ecoleId, e.annee
+                    e.identifiantTemporaire, e.nom as student_nom, e.prenom as student_prenom
              FROM etudiants e
              LEFT JOIN users u ON e.userId = u.id
              WHERE e.identifiantTemporaire = ? OR e.matricule = ? OR e.codeInscription = ?
@@ -60,11 +75,20 @@ class AuthService {
                 [identifier, identifier, identifier]
             );
 
-            console.log('🎓 Résultat recherche étudiant:', rows[0]);
+            console.log('🎓 RÉSULTAT REQUÊTE PRINCIPALE:', rows);
 
-            if (!rows || rows.length === 0) return null;
+            if (!rows || rows.length === 0) {
+                console.log('❌ AUCUN RÉSULTAT DANS LA REQUÊTE PRINCIPALE');
+                return null;
+            }
 
             const r = rows[0];
+            console.log('✅ DONNÉES TROUVÉES:', {
+                matricule: r.matricule,
+                identifiantTemporaire: r.identifiantTemporaire,
+                userId: r.user_id,
+                userEmail: r.user_email
+            });
 
             const student = {
                 id: r.student_id,
@@ -73,10 +97,7 @@ class AuthService {
                 codeInscription: r.codeInscription,
                 identifiantTemporaire: r.identifiantTemporaire,
                 nom: r.student_nom,
-                prenom: r.student_prenom,
-                filiereId: r.filiereId,
-                ecoleId: r.ecoleId,
-                annee: r.annee
+                prenom: r.student_prenom
             };
 
             if (r.user_id) {
@@ -84,16 +105,19 @@ class AuthService {
                     id: r.user_id,
                     email: r.user_email,
                     password: r.user_password,
-                    tempPassword: r.user_tempPassword,
-                    requirePasswordChange: r.user_requirePasswordChange,
-                    actif: r.user_actif,
-                    role: r.user_role,
+                    tempPassword: null,
+                    requirePasswordChange: false,
+                    actif: true,
+                    role: 'ETUDIANT',
                     student
                 };
             }
 
-            // Pas d'utilisateur lié, retourner uniquement l'objet étudiant
             return { student };
+
+        } catch (error) {
+            console.error('💥 ERREUR findUser:', error);
+            return null;
         } finally {
             if (connection) await connection.release();
         }
