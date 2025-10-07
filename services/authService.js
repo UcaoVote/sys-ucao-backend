@@ -34,31 +34,38 @@ class AuthService {
         let connection;
         try {
             connection = await pool.getConnection();
-            // Si c'est une adresse email, chercher directement dans users
+
+            console.log('🔍 Recherche utilisateur avec identifiant:', identifier);
+
             if (identifier.includes('@')) {
                 const [userRows] = await connection.execute(
                     'SELECT * FROM users WHERE email = ?',
                     [identifier]
                 );
+                console.log('📧 Résultat recherche email:', userRows[0]);
                 return userRows[0] || null;
             }
 
-            // Sinon, tenter de retrouver un étudiant par identifiant temporaire, matricule ou codeInscription
             const [rows] = await connection.execute(
-                `SELECT u.id as user_id, u.email as user_email, u.password as user_password, u.tempPassword as user_tempPassword,
-                        u.requirePasswordChange as user_requirePasswordChange, u.actif as user_actif, u.role as user_role,
-            e.id as student_id, e.userId as student_userId, e.matricule, e.codeInscription, e.identifiantTemporaire, e.email as student_email,
-                        e.nom as student_nom, e.prenom as student_prenom, e.filiereId, e.ecoleId, e.annee
-                 FROM etudiants e
-                 LEFT JOIN users u ON e.userId = u.id
-                 WHERE e.identifiantTemporaire = ? OR e.matricule = ? OR e.codeInscription = ?
-                 LIMIT 1`,
+                `SELECT u.id as user_id, u.email as user_email, u.password as user_password, 
+                    u.tempPassword as user_tempPassword, u.requirePasswordChange as user_requirePasswordChange, 
+                    u.actif as user_actif, u.role as user_role,
+                    e.id as student_id, e.userId as student_userId, e.matricule, e.codeInscription, 
+                    e.identifiantTemporaire, e.nom as student_nom, e.prenom as student_prenom, 
+                    e.filiereId, e.ecoleId, e.annee
+             FROM etudiants e
+             LEFT JOIN users u ON e.userId = u.id
+             WHERE e.identifiantTemporaire = ? OR e.matricule = ? OR e.codeInscription = ?
+             LIMIT 1`,
                 [identifier, identifier, identifier]
             );
+
+            console.log('🎓 Résultat recherche étudiant:', rows[0]);
 
             if (!rows || rows.length === 0) return null;
 
             const r = rows[0];
+
             const student = {
                 id: r.student_id,
                 userId: r.student_userId,

@@ -37,37 +37,48 @@ class AuthController {
                 });
             }
 
-            // Si findUser retourne un objet avec seulement 'student', cela signifie que l'étudiant
-            // existe en base mais n'a pas de compte utilisateur lié. Dans ce cas, on crée
-            // automatiquement l'utilisateur lors de la première connexion avec matricule/code.
-            if (user.student && !user.id) {
-                // On exige un mot de passe pour créer l'utilisateur
-                if (!password) {
-                    return res.status(400).json({ success: false, message: 'Mot de passe requis pour première connexion' });
+            // NOUVELLE LOGIQUE : Si l'utilisateur existe mais n'a pas de password
+            if (user.id && !user.password) {
+                // Créer le password avec celui fourni par l'étudiant
+                const hashedPassword = await authService.hashPassword(password);
+
+                let connection;
+                try {
+                    connection = await pool.getConnection();
+                    await connection.execute(
+                        'UPDATE users SET password = ? WHERE id = ?',
+                        [hashedPassword, user.id]
+                    );
+
+                    // Maintenant recharger l'utilisateur avec le nouveau password
+                    const updatedUser = await authService.findUser(identifier);
+                    if (!updatedUser) {
+                        throw new Error('Erreur lors de la mise à jour du mot de passe');
+                    }
+
+                    // Remplacer user par updatedUser
+                    Object.assign(user, updatedUser);
+                } finally {
+                    if (connection) await connection.release();
                 }
+            }
 
-                // Utiliser l'email fourni dans la table etudiants si l'admin l'a importé
+            // Ancienne logique (pour les étudiants sans user)
+            if (user.student && !user.id) {
+                // [Garder l'ancien code pour la rétrocompatibilité]
                 const emailToUse = user.student.email || `${user.student.matricule || user.student.codeInscription || user.student.identifiantTemporaire}@no-email.local`;
-
-                // Créer l'utilisateur et lier à l'étudiant
                 const newUserId = await userService.createUser({
                     email: emailToUse,
                     password
                 });
-
-                // Mettre à jour l'étudiant pour lier le userId
                 await userService.updateStudent({
                     ...user.student,
                     tempId: user.student.identifiantTemporaire
                 }, user.student.id, newUserId);
-
-                // CORRECTION: Utiliser emailToUse au lieu de placeholderEmail
                 const createdUser = await authService.findUser(emailToUse);
                 if (!createdUser) {
                     return res.status(500).json({ success: false, message: 'Impossible de créer le compte utilisateur' });
                 }
-
-                // Remplacer user par createdUser pour poursuivre le flow normal
                 Object.assign(user, createdUser);
             }
 
@@ -107,7 +118,7 @@ class AuthController {
                 }
             }
 
-            // Vérifier mot de passe normal
+            // Vérifier mot de passe normal - MAINTENANT ça devrait fonctionner
             const validPassword = await authService.verifyPassword(password, user.password);
             if (!validPassword) {
                 return res.status(401).json({
