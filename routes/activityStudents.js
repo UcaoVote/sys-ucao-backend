@@ -740,7 +740,7 @@ router.get('/students', authenticateToken, requireAdmin, async (req, res) => {
   s.nom as subactivity_name,
   s.icone as subactivity_icon,
   sa.created_at as date_inscription,
-  sa.actif
+  a.actif as category_actif
 FROM etudiants e
 INNER JOIN users u ON e.userId = u.id
 INNER JOIN ecoles ec ON e.ecoleId = ec.id
