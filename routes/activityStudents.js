@@ -1,4 +1,5 @@
 import express from 'express';
+import ExcelJS from 'exceljs';
 import activityController from '../controllers/activityController.js';
 import pool from '../dbconfig.js';
 import { authenticateToken, requireAdmin } from '../middlewares/auth.js';
@@ -819,7 +820,7 @@ ORDER BY e.nom, e.prenom, a.nom, s.nom;`
 
         if (format === 'csv') {
             // Générer CSV
-            const headers = ['Nom', 'Prénom', 'Email', 'Année', 'École', 'Filière', 'Activité Principale', 'Sous-Activité', 'Date Inscription', 'Statut'];
+            const headers = ['Nom', 'Prénom', 'Email', 'Année', 'École', 'Filière', 'Activité Principale', 'Sous-Activité', 'Date Inscription'];
             let csvContent = headers.join(';') + '\n';
 
             students.forEach(row => {
@@ -832,37 +833,86 @@ ORDER BY e.nom, e.prenom, a.nom, s.nom;`
                     `"${row.filiere || ''}"`,
                     `"${row.activite_principale || ''}"`,
                     `"${row.sous_activite || ''}"`,
-                    `"${row.date_inscription ? new Date(row.date_inscription).toLocaleDateString('fr-FR') : ''}"`,
-                    `"${row.statut || ''}"`
+                    `"${row.date_inscription ? new Date(row.date_inscription).toLocaleDateString('fr-FR') : ''}"`
                 ];
                 csvContent += line.join(';') + '\n';
             });
 
-            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
             res.setHeader('Content-Disposition', 'attachment; filename=etudiants_activites.csv');
             res.send(csvContent);
 
         } else if (format === 'excel') {
-            // Pour Excel, vous pouvez utiliser une bibliothèque comme exceljs
-            // Pour l'instant, retourner un CSV avec extension xlsx
-            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            res.setHeader('Content-Disposition', 'attachment; filename=etudiants_activites.xlsx');
-            // Implémentation Excel à compléter avec exceljs
-            res.json({
-                success: true,
-                message: 'Export Excel à implémenter',
-                data: students
+            // Créer un nouveau classeur Excel
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Étudiants et Activités');
+
+            // Définir les en-têtes de colonnes
+            worksheet.columns = [
+                { header: 'Nom', key: 'nom', width: 20 },
+                { header: 'Prénom', key: 'prenom', width: 20 },
+                { header: 'Email', key: 'email', width: 30 },
+                { header: 'Année', key: 'annee', width: 10 },
+                { header: 'École', key: 'ecole', width: 25 },
+                { header: 'Filière', key: 'filiere', width: 30 },
+                { header: 'Activité Principale', key: 'activite_principale', width: 25 },
+                { header: 'Sous-Activité', key: 'sous_activite', width: 25 },
+                { header: 'Date Inscription', key: 'date_inscription', width: 15 }
+            ];
+
+            // Style pour les en-têtes
+            worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+            worksheet.getRow(1).fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FF8B0000' } // Bordeaux
+            };
+            worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+            // Ajouter les données
+            students.forEach(student => {
+                worksheet.addRow({
+                    nom: student.nom || '',
+                    prenom: student.prenom || '',
+                    email: student.email || '',
+                    annee: student.annee || '',
+                    ecole: student.ecole || '',
+                    filiere: student.filiere || '',
+                    activite_principale: student.activite_principale || '',
+                    sous_activite: student.sous_activite || '',
+                    date_inscription: student.date_inscription ?
+                        new Date(student.date_inscription).toLocaleDateString('fr-FR') : ''
+                });
             });
 
+            // Appliquer des bordures à toutes les cellules
+            worksheet.eachRow((row, rowNumber) => {
+                row.eachCell((cell) => {
+                    cell.border = {
+                        top: { style: 'thin' },
+                        left: { style: 'thin' },
+                        bottom: { style: 'thin' },
+                        right: { style: 'thin' }
+                    };
+                    if (rowNumber > 1) {
+                        cell.alignment = { vertical: 'middle', horizontal: 'left' };
+                    }
+                });
+            });
+
+            // Configurer la réponse
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', 'attachment; filename=etudiants_activites.xlsx');
+
+            // Écrire le fichier Excel dans la réponse
+            await workbook.xlsx.write(res);
+            res.end();
+
         } else if (format === 'pdf') {
-            // Pour PDF, vous pouvez utiliser une bibliothèque comme pdfkit
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', 'attachment; filename=etudiants_activites.pdf');
-            // Implémentation PDF à compléter avec pdfkit
-            res.json({
-                success: true,
-                message: 'Export PDF à implémenter',
-                data: students
+            // Retourner une erreur pour PDF non implémenté
+            res.status(501).json({
+                success: false,
+                message: 'Export PDF non implémenté pour le moment'
             });
 
         } else {
