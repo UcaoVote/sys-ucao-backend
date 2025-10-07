@@ -223,24 +223,25 @@ export const importService = {
                     const identifiantTemporaire = this.genererIdentifiantTemporaire();
 
                     // 6. Générer un email si non fourni
-                    const email = etudiant.email || `${etudiant.matricule || etudiant.codeInscription || identifiantTemporaire}@ucao-temp.local`;
+                    const email = etudiant.email || `${etudiant.matricule || etudiant.codeInscription || identifiantTemporaire}@ucao-temp.com`;
 
-                    // 7. Créer le COMPTE USER (avec email, sans mot de passe)
+                    // 7. Créer le COMPTE USER (avec email mais SANS MOT DE PASSE)
                     const userId = this.genererUserId();
 
+                    // IMPORTANT: On ne met pas de password, l'étudiant le définira à la première connexion
                     await connection.execute(
-                        `INSERT INTO users (id, email, role, actif, requirePasswordChange, createdAt) 
-                         VALUES (?, ?, 'ETUDIANT', TRUE, TRUE, NOW())`,
+                        `INSERT INTO users (id, email, role, actif, createdAt) 
+                     VALUES (?, ?, 'ETUDIANT', TRUE, NOW())`,
                         [userId, email]
                     );
 
                     // 8. Créer l'ÉTUDIANT (lié au user)
                     const [result] = await connection.execute(
                         `INSERT INTO etudiants 
-                         (userId, matricule, codeInscription, identifiantTemporaire, nom, prenom, annee, ecoleId, filiereId, whatsapp) 
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                     (userId, matricule, codeInscription, identifiantTemporaire, nom, prenom, annee, ecoleId, filiereId, whatsapp) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                         [
-                            userId, // Lien vers users
+                            userId,
                             etudiant.matricule,
                             etudiant.codeInscription,
                             identifiantTemporaire,
