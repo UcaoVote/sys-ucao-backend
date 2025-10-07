@@ -3,7 +3,7 @@ import { importService } from '../services/importService.js';
 export const importController = {
     async importEtudiants(req, res) {
         try {
-            const { etudiants } = req.body;
+            const { etudiants, updateExisting = false } = req.body; // Nouveau paramètre
 
             if (!etudiants || !Array.isArray(etudiants) || etudiants.length === 0) {
                 return res.status(400).json({
@@ -30,24 +30,33 @@ export const importController = {
                 });
             }
 
-            // Vérifier les doublons
+            // Vérifier les doublons (mais ne pas bloquer si updateExisting = true)
             const doublons = await importService.verifierDoublons(etudiantsValides.donnees);
-            if (doublons.length > 0) {
+
+            if (doublons.length > 0 && !updateExisting) {
                 return res.status(400).json({
                     message: 'Doublons détectés',
-                    doublons: doublons
+                    doublons: doublons,
+                    suggestion: 'Utilisez updateExisting=true pour mettre à jour les étudiants existants'
                 });
             }
 
-            // Importer les étudiants
-            const resultat = await importService.importerEtudiants(etudiantsValides.donnees);
+            // Importer les étudiants avec l'option de mise à jour
+            const resultat = await importService.importerEtudiants(
+                etudiantsValides.donnees,
+                updateExisting
+            );
 
             return res.status(201).json({
-                message: 'Importation terminée avec succès.',
+                message: updateExisting ?
+                    'Importation/Mise à jour terminée avec succès.' :
+                    'Importation terminée avec succès.',
                 importes: resultat.importes,
+                misAJour: resultat.misAJour || [], // Nouveau champ
                 echecs: resultat.echecs,
+                doublonsTrouves: doublons.length,
                 total: etudiants.length,
-                reussis: resultat.importes.length,
+                reussis: resultat.importes.length + (resultat.misAJour?.length || 0),
                 echoues: resultat.echecs.length
             });
 
