@@ -23,24 +23,24 @@ export class PasswordResetService {
         try {
             connection = await pool.getConnection();
 
-            // Récupérer l'étudiant avec son utilisateur
+            // Récupérer l'étudiant avec son utilisateur - NOMS DE COLONNES CORRIGÉS
             const [studentRows] = await connection.execute(
-                `SELECT e.*, u.id as user_id, u.temp_password, u.require_password_change, 
-                        u.password_reset_expires, u.password
+                `SELECT e.*, u.id as userId, u.tempPassword, u.requirePasswordChange, 
+                        u.passwordResetExpires, u.password
                  FROM etudiants e 
-                 INNER JOIN users u ON e.user_id = u.id 
+                 INNER JOIN users u ON e.userId = u.id 
                  WHERE e.id = ?`,
                 [studentId]
             );
 
-            if (studentRows.length === 0 || !studentRows[0].user_id) {
+            if (studentRows.length === 0 || !studentRows[0].userId) {
                 throw new Error('Étudiant non trouvé ou sans compte lié');
             }
 
             const student = studentRows[0];
 
             // Générer identifiant temporaire si absent
-            let temporaryIdentifiant = student.identifiant_temporaire;
+            let temporaryIdentifiant = student.identifiantTemporaire;
             if (!temporaryIdentifiant) {
                 const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
                 let idt = '';
@@ -59,28 +59,28 @@ export class PasswordResetService {
             await connection.beginTransaction();
 
             try {
-                // Mise à jour de l'utilisateur
+                // Mise à jour de l'utilisateur - NOMS DE COLONNES CORRIGÉS
                 await connection.execute(
                     `UPDATE users 
-                     SET temp_password = ?, require_password_change = TRUE, password_reset_expires = ?
+                     SET tempPassword = ?, requirePasswordChange = TRUE, passwordResetExpires = ?
                      WHERE id = ?`,
-                    [temporaryPasswordHash, expirationDate, student.user_id]
+                    [temporaryPasswordHash, expirationDate, student.userId]
                 );
 
-                // Mise à jour de l'étudiant
+                // Mise à jour de l'étudiant - NOMS DE COLONNES CORRIGÉS
                 await connection.execute(
                     `UPDATE etudiants 
-                     SET identifiant_temporaire = ?
+                     SET identifiantTemporaire = ?
                      WHERE id = ?`,
                     [temporaryIdentifiant, studentId]
                 );
 
-                // Log d'activité si la table existe
+                // Log d'activité si la table existe - NOMS DE COLONNES CORRIGÉS
                 try {
                     await connection.execute(
-                        `INSERT INTO activity_logs (action, details, user_id) 
-                         VALUES (?, ?, ?)`,
-                        ['RESET_STUDENT_ACCESS', `Admin ${adminId} reset student ${studentId}`, adminId]
+                        `INSERT INTO activity_logs (action, details, userId, actionType, module) 
+                         VALUES (?, ?, ?, ?, ?)`,
+                        ['RESET_STUDENT_ACCESS', `Admin ${adminId} reset student ${studentId}`, adminId, 'ADMIN', 'SYSTEM']
                     );
                 } catch (err) {
                     // Ne pas bloquer la requête si le log échoue
@@ -90,9 +90,9 @@ export class PasswordResetService {
                 // Commit de la transaction
                 await connection.commit();
 
-                // Récupérer les informations mises à jour de l'étudiant
+                // Récupérer les informations mises à jour de l'étudiant - NOMS DE COLONNES CORRIGÉS
                 const [updatedStudentRows] = await connection.execute(
-                    `SELECT nom, prenom, matricule FROM etudiants WHERE id = ?`,
+                    `SELECT nom, prenom, matricule, codeInscription FROM etudiants WHERE id = ?`,
                     [studentId]
                 );
 
@@ -123,27 +123,32 @@ export class PasswordResetService {
         try {
             connection = await pool.getConnection();
 
-            // Rechercher l'étudiant par identifiant temporaire
+            // Rechercher l'étudiant par identifiant temporaire - NOMS DE COLONNES CORRIGÉS
             const [studentRows] = await connection.execute(
-                `SELECT e.*, u.id as user_id, u.temp_password, u.password_reset_expires 
+                `SELECT e.*, u.id as userId, u.tempPassword, u.passwordResetExpires 
                  FROM etudiants e 
-                 INNER JOIN users u ON e.user_id = u.id 
-                 WHERE e.identifiant_temporaire = ?`,
+                 INNER JOIN users u ON e.userId = u.id 
+                 WHERE e.identifiantTemporaire = ?`,
                 [identifiant]
             );
 
-            if (studentRows.length === 0 || !studentRows[0].user_id) {
+            if (studentRows.length === 0 || !studentRows[0].userId) {
                 throw new Error('Identifiant temporaire invalide');
             }
 
             const student = studentRows[0];
 
-            // Vérifier expiration si présente
-            if (student.password_reset_expires && new Date(student.password_reset_expires) < new Date()) {
+            // Vérifier expiration si présente - NOMS DE COLONNES CORRIGÉS
+            if (student.passwordResetExpires && new Date(student.passwordResetExpires) < new Date()) {
                 throw new Error('Identifiants temporaires expirés');
             }
 
-            const isValid = await bcrypt.compare(password, student.temp_password || '');
+            // Vérifier si le mot de passe temporaire existe
+            if (!student.tempPassword) {
+                throw new Error('Aucun mot de passe temporaire défini');
+            }
+
+            const isValid = await bcrypt.compare(password, student.tempPassword);
             if (!isValid) {
                 throw new Error('Mot de passe temporaire incorrect');
             }
@@ -170,16 +175,73 @@ export class PasswordResetService {
             connection = await pool.getConnection();
             const hashed = await bcrypt.hash(newPassword, 10);
 
+            // NOMS DE COLONNES CORRIGÉS
             await connection.execute(
                 `UPDATE users 
-                 SET password = ?, temp_password = NULL, require_password_change = FALSE, password_reset_expires = NULL 
+                 SET password = ?, tempPassword = NULL, requirePasswordChange = FALSE, passwordResetExpires = NULL 
                  WHERE id = ?`,
                 [hashed, userId]
             );
 
+            // Log de l'activité
+            try {
+                await connection.execute(
+                    `INSERT INTO activity_logs (action, details, userId, actionType, module) 
+                     VALUES (?, ?, ?, ?, ?)`,
+                    ['PASSWORD_CHANGE', 'Mot de passe changé avec succès via réinitialisation', userId, 'INFO', 'AUTH']
+                );
+            } catch (err) {
+                console.warn('Activity log failed (non blocking):', err.message);
+            }
+
             return true;
         } catch (error) {
             throw new Error(`Erreur lors du changement de mot de passe: ${error.message}`);
+        } finally {
+            if (connection) connection.release();
+        }
+    }
+
+    /**
+     * Méthode supplémentaire pour vérifier si un utilisateur nécessite un changement de mot de passe
+     */
+    static async requiresPasswordChange(userId) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+
+            const [userRows] = await connection.execute(
+                `SELECT requirePasswordChange, passwordResetExpires 
+                 FROM users 
+                 WHERE id = ?`,
+                [userId]
+            );
+
+            if (userRows.length === 0) {
+                throw new Error('Utilisateur non trouvé');
+            }
+
+            const user = userRows[0];
+
+            // Vérifier si le changement est requis et si la date d'expiration n'est pas dépassée
+            if (user.requirePasswordChange) {
+                if (user.passwordResetExpires && new Date(user.passwordResetExpires) < new Date()) {
+                    // Expiration dépassée, révoquer la demande
+                    await connection.execute(
+                        `UPDATE users 
+                         SET requirePasswordChange = FALSE, tempPassword = NULL, passwordResetExpires = NULL 
+                         WHERE id = ?`,
+                        [userId]
+                    );
+                    return false;
+                }
+                return true;
+            }
+
+            return false;
+
+        } catch (error) {
+            throw new Error(`Erreur lors de la vérification: ${error.message}`);
         } finally {
             if (connection) connection.release();
         }
