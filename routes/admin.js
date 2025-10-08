@@ -1,6 +1,5 @@
 // routes/admin.js
 import express from 'express';
-import { authenticateToken } from '../middlewares/auth.js';
 import { authenticateToken, requireAdmin } from '../middlewares/auth.js';
 import { PasswordResetService } from '../services/passwordResetService.js';
 

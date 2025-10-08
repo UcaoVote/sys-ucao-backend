@@ -1,6 +1,6 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import adminService from '../controllers/adminManager.js';
+import AdminService from '../controllers/adminManager.js';
 const router = express.Router();
 
 // Connexion administrateur
@@ -16,7 +16,7 @@ router.post('/login', async (req, res) => {
         }
 
         // Trouver l'admin par email
-        const admin = await adminService.findAdminByEmail(email);
+        const admin = await AdminService.findAdminByEmail(email);
 
         if (!admin) {
             return res.status(400).json({
@@ -26,7 +26,7 @@ router.post('/login', async (req, res) => {
         }
 
         // Vérifier le mot de passe
-        const validPassword = await adminService.verifyPassword(password, admin.password);
+        const validPassword = await AdminService.verifyPassword(password, admin.password);
         if (!validPassword) {
             return res.status(400).json({
                 success: false,
@@ -83,7 +83,7 @@ router.post('/register', async (req, res) => {
         }
 
         // Vérifier si l'email existe déjà
-        const emailExists = await adminService.checkEmailExists(email);
+        const emailExists = await AdminService.checkEmailExists(email);
         if (emailExists) {
             return res.status(400).json({
                 success: false,
@@ -92,7 +92,7 @@ router.post('/register', async (req, res) => {
         }
 
         // Créer l'admin
-        const result = await adminService.createAdmin({
+        const result = await AdminService.createAdmin({
             email,
             password,
             nom,
