@@ -392,7 +392,11 @@ async function getFilteredCandidatures({ filiereId, ecoleId, statut }) {
                 ec.nom AS nomEcole,
                 c.statut,
                 c.createdAt AS dateSoumission,
-                u.email
+                u.email,
+                c.photoUrl,
+                c.slogan,
+                c.programme,
+                c.motivation
             FROM candidates c
             INNER JOIN users u ON c.userId = u.id
             INNER JOIN etudiants e ON u.id = e.userId
@@ -424,7 +428,11 @@ async function getAllCandidatures() {
                 c.statut,
                 c.createdAt AS dateSoumission,
                 u.email,
-                u.actif
+                u.actif,
+                c.photoUrl,
+                c.slogan,
+                c.programme,
+                c.motivation
             FROM candidates c
             INNER JOIN users u ON c.userId = u.id
             INNER JOIN etudiants e ON c.userId = e.userId
@@ -451,7 +459,11 @@ async function searchCandidatures(searchTerm) {
                 ec.nom AS nomEcole,
                 c.statut,
                 c.createdAt AS dateSoumission,
-                u.email
+                u.email,
+                c.photoUrl,
+                c.slogan,
+                c.programme,
+                c.motivation
             FROM candidates c
             INNER JOIN etudiants e ON c.userId = e.userId
             INNER JOIN users u ON e.userId = u.id
