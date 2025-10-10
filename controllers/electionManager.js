@@ -60,7 +60,9 @@ async function getElectionsForStudent(filiereId, annee, ecoleId) {
                 WHEN NOW() BETWEEN e.dateDebut AND e.dateFin THEN 'EN_COURS'
                 WHEN NOW() > e.dateFin THEN 'TERMINÉE'
                 ELSE 'INCONNU'
-            END AS statut
+            END AS statut,
+            (SELECT COUNT(*) FROM candidates c WHERE c.electionId = e.id AND c.statut = 'APPROUVE') AS nb_candidats,
+            (SELECT COUNT(*) FROM votes v WHERE v.electionId = e.id) AS nb_votes
         FROM elections e
         LEFT JOIN filieres f ON f.id = e.filiereId
         LEFT JOIN ecoles ec ON ec.id = e.ecoleId
@@ -108,7 +110,9 @@ async function getAllElections() {
                 e.niveau,
                 e.delegueType,
                 e.isActive,
-                e.createdAt
+                e.createdAt,
+                (SELECT COUNT(*) FROM candidates c WHERE c.electionId = e.id AND c.statut = 'APPROUVE') AS nb_candidats,
+                (SELECT COUNT(*) FROM votes v WHERE v.electionId = e.id) AS nb_votes
             FROM elections e
             LEFT JOIN filieres f ON f.id = e.filiereId
             LEFT JOIN ecoles ec ON ec.id = e.ecoleId
@@ -130,7 +134,9 @@ async function getElectionById(id) {
                 e.dateDebut, e.dateFin, e.dateDebutCandidature, e.dateFinCandidature,
                 e.filiereId, f.nom AS nomFiliere,
                 e.annee, e.ecoleId, ec.nom AS nomEcole,
-                e.niveau, e.delegueType, e.isActive, e.createdAt
+                e.niveau, e.delegueType, e.isActive, e.createdAt,
+                (SELECT COUNT(*) FROM candidates c WHERE c.electionId = e.id AND c.statut = 'APPROUVE') AS nb_candidats,
+                (SELECT COUNT(*) FROM votes v WHERE v.electionId = e.id) AS nb_votes
             FROM elections e
             LEFT JOIN filieres f ON f.id = e.filiereId
             LEFT JOIN ecoles ec ON ec.id = e.ecoleId
@@ -240,7 +246,9 @@ async function getActiveElections() {
             e.niveau,
             e.delegueType,
             e.isActive,
-            e.createdAt
+            e.createdAt,
+            (SELECT COUNT(*) FROM candidates c WHERE c.electionId = e.id AND c.statut = 'APPROUVE') AS nb_candidats,
+            (SELECT COUNT(*) FROM votes v WHERE v.electionId = e.id) AS nb_votes
         FROM elections e
         LEFT JOIN filieres f ON f.id = e.filiereId
         LEFT JOIN ecoles ec ON ec.id = e.ecoleId
