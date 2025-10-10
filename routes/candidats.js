@@ -177,6 +177,9 @@ router.get('/elections/:electionId', authenticateToken, async (req, res) => {
         const [candidates] = await connection.execute(`
             SELECT 
                 c.id AS candidatId,
+                c.id AS id,
+                c.nom,
+                c.prenom,
                 c.nom AS candidatNom,
                 c.prenom AS candidatPrenom,
                 c.slogan,
