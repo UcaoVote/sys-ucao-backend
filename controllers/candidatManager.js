@@ -423,6 +423,7 @@ async function getAllCandidatures() {
                 c.electionId,
                 e.nom,
                 e.prenom,
+                e.annee,
                 f.nom AS nomFiliere,
                 ec.nom AS nomEcole,
                 c.statut,
