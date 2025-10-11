@@ -433,12 +433,18 @@ async function getAllCandidatures() {
                 c.photoUrl,
                 c.slogan,
                 c.programme,
-                c.motivation
+                c.motivation,
+                el.dateDebutCandidature,
+                el.dateFinCandidature,
+                el.niveau AS electionNiveau,
+                el.titre AS electionTitre,
+                el.isActive AS electionActive
             FROM candidates c
             INNER JOIN users u ON c.userId = u.id
             INNER JOIN etudiants e ON c.userId = e.userId
             LEFT JOIN filieres f ON e.filiereId = f.id
             LEFT JOIN ecoles ec ON e.ecoleId = ec.id
+            LEFT JOIN elections el ON c.electionId = el.id
             ORDER BY c.createdAt DESC
         `);
         return rows;
