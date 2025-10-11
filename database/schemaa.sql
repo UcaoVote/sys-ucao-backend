@@ -18,7 +18,7 @@ CREATE TABLE `activities` (
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 DROP TABLE IF EXISTS `activity_logs`;
 CREATE TABLE `activity_logs` (
@@ -34,7 +34,7 @@ CREATE TABLE `activity_logs` (
   KEY `idx_activitylogs_actionType` (`actionType`),
   KEY `idx_activitylogs_created` (`createdAt`),
   CONSTRAINT `fk_log_user` FOREIGN KEY (`userId`) REFERENCES `users` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `admins`;
 CREATE TABLE `admins` (
@@ -49,7 +49,7 @@ CREATE TABLE `admins` (
   UNIQUE KEY `userId` (`userId`),
   KEY `idx_admins_user` (`userId`),
   CONSTRAINT `fk_admin_user` FOREIGN KEY (`userId`) REFERENCES `users` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `candidates`;
 CREATE TABLE `candidates` (
@@ -72,7 +72,7 @@ CREATE TABLE `candidates` (
   KEY `idx_candidates_user` (`userId`),
   CONSTRAINT `fk_candidate_election` FOREIGN KEY (`electionId`) REFERENCES `elections` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_candidate_user` FOREIGN KEY (`userId`) REFERENCES `users` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `delegues_ecole`;
 CREATE TABLE `delegues_ecole` (
@@ -111,7 +111,7 @@ CREATE TABLE `ecoles` (
   `createdAt` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `nom` (`nom`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `election_results`;
 CREATE TABLE `election_results` (
@@ -185,7 +185,7 @@ CREATE TABLE `elections` (
   KEY `idx_elections_filiereId` (`filiereId`),
   CONSTRAINT `fk_elections_ecoleId` FOREIGN KEY (`ecoleId`) REFERENCES `ecoles` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_elections_filiereId` FOREIGN KEY (`filiereId`) REFERENCES `filieres` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `etudiants`;
 CREATE TABLE `etudiants` (
@@ -214,7 +214,7 @@ CREATE TABLE `etudiants` (
   CONSTRAINT `fk_etudiant_user` FOREIGN KEY (`userId`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_etudiants_ecoleId` FOREIGN KEY (`ecoleId`) REFERENCES `ecoles` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_etudiants_filiereId` FOREIGN KEY (`filiereId`) REFERENCES `filieres` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `filieres`;
 CREATE TABLE `filieres` (
@@ -227,7 +227,7 @@ CREATE TABLE `filieres` (
   UNIQUE KEY `nom` (`nom`,`ecoleId`),
   KEY `fk_filiere_ecole` (`ecoleId`),
   CONSTRAINT `fk_filiere_ecole` FOREIGN KEY (`ecoleId`) REFERENCES `ecoles` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `notifications`;
 CREATE TABLE `notifications` (
@@ -295,6 +295,7 @@ DROP TABLE IF EXISTS `student_activities`;
 CREATE TABLE `student_activities` (
   `student_id` int NOT NULL,
   `activity_id` int NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`student_id`,`activity_id`),
   KEY `activity_id` (`activity_id`),
   CONSTRAINT `student_activities_ibfk_1` FOREIGN KEY (`student_id`) REFERENCES `etudiants` (`id`) ON DELETE CASCADE,
@@ -327,13 +328,13 @@ CREATE TABLE `subactivities` (
   PRIMARY KEY (`id`),
   KEY `activity_id` (`activity_id`),
   CONSTRAINT `subactivities_ibfk_1` FOREIGN KEY (`activity_id`) REFERENCES `activities` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 DROP TABLE IF EXISTS `users`;
 CREATE TABLE `users` (
   `id` varchar(191) COLLATE utf8mb4_general_ci NOT NULL,
   `email` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
-  `password` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
+  `password` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `role` enum('ETUDIANT','ADMIN') COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'ADMIN',
   `createdAt` datetime DEFAULT CURRENT_TIMESTAMP,
   `actif` tinyint(1) DEFAULT '1',
@@ -367,7 +368,7 @@ CREATE TABLE `vote_tokens` (
   KEY `idx_votetokens_user_election` (`userId`,`electionId`),
   CONSTRAINT `fk_votetoken_election` FOREIGN KEY (`electionId`) REFERENCES `elections` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_votetoken_user` FOREIGN KEY (`userId`) REFERENCES `users` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `vote_transfers`;
 CREATE TABLE `vote_transfers` (
@@ -404,64 +405,9 @@ CREATE TABLE `votes` (
   CONSTRAINT `fk_vote_candidate` FOREIGN KEY (`candidateId`) REFERENCES `candidates` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_vote_election` FOREIGN KEY (`electionId`) REFERENCES `elections` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_vote_user` FOREIGN KEY (`userId`) REFERENCES `users` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-INSERT INTO `activities` (`id`, `nom`, `description`, `actif`, `icone`, `has_subactivities`, `created_at`, `updated_at`) VALUES
-(1, 'Technologie', 'Rien', 1, 'running', 1, '2025-10-05 11:36:08', '2025-10-05 12:34:29'),
-(2, 'Culture', 'nnnnnnnnnnnnnnnnnnn', 1, 'pallete', 1, '2025-10-06 17:31:27', '2025-10-06 17:31:27');
-INSERT INTO `activity_logs` (`id`, `action`, `details`, `userId`, `actionType`, `createdAt`, `module`) VALUES
-(1, 'Création d\'une élection', 'Élection \"Election Responsable\" créée', 'user_1759556064875_467t2upf9', 'ADMIN', '2025-10-05 10:07:43', 'SYSTEM'),
-(2, 'Candidature réussie', 'Soumission à l’élection 1 avec l’ID 1', '339befd1-a0e7-11f0-8a8b-a2aa80b4014f', 'SUCCESS', '2025-10-05 10:10:08', 'SYSTEM'),
-(3, 'Changement de statut de candidature', 'Statut changé en \"APPROUVE\" pour l\'élection \"Election Responsable\"', 'user_1759556064875_467t2upf9', 'ADMIN', '2025-10-05 10:14:14', 'SYSTEM'),
-(4, 'Vote enregistré', 'Vote pour le candidat 1 dans l\'élection 1', '339befd1-a0e7-11f0-8a8b-a2aa80b4014f', 'VOTE', '2025-10-05 10:27:28', 'SYSTEM'),
-(5, 'Résultats publiés manuellement', 'Publication manuelle des résultats de l\'élection: Election Responsable', 'user_1759556064875_467t2upf9', 'PUBLICATION', '2025-10-05 10:55:43', 'SYSTEM'),
-(6, 'Création d\'une élection', 'Élection \"Election delegué\" créée', 'user_1759556064875_467t2upf9', 'ADMIN', '2025-10-06 17:37:17', 'SYSTEM'),
-(7, 'Création d\'une élection', 'Élection \"Election delegué\" créée', 'user_1759556064875_467t2upf9', 'ADMIN', '2025-10-06 17:51:22', 'SYSTEM');
-INSERT INTO `admins` (`id`, `userId`, `nom`, `prenom`, `poste`, `createdAt`, `updatedAt`) VALUES
-(1, 'user_1759556064875_467t2upf9', 'Admin_UCAO', 'UUC', 'Superviseur', '2025-10-04 05:34:25', '2025-10-04 05:34:25');
-INSERT INTO `candidates` (`id`, `nom`, `prenom`, `slogan`, `programme`, `motivation`, `photoUrl`, `statut`, `userId`, `electionId`, `createdAt`, `updatedAt`) VALUES
-(1, 'TCHIDEHOU', 'Dodji Virgile', 'Science pour la vie', 'La sécurité des données acquises dans un système industriel désigne l\'ensemble des méthodes, technologies et bonnes pratiques permettant de protéger les informations issues des capteurs, automates et équipements industriels contre les risques de perte, de vol, d\'altération ou de divulgation non autorisée.', 'La sécurité des données acquises dans un système industriel désigne l\'ensemble des méthodes, technologies et bonnes pratiques permettant de protéger les informations issues des capteurs, automates et équipements industriels contre les risques de perte, de vol, d\'altération ou de divulgation non autorisée.', 'https://i.ibb.co/7NWW8sb8/freepik-the-style-is-candid-image-photography-with-natural-60336.png', 'APPROUVE', '339befd1-a0e7-11f0-8a8b-a2aa80b4014f', 1, '2025-10-05 10:10:08', '2025-10-06 17:53:17');
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
-INSERT INTO `ecoles` (`id`, `nom`, `actif`, `createdAt`) VALUES
-(1, 'EGEI', 1, '2025-10-04 05:35:09'),
-(2, 'FSAE', 1, '2025-10-06 17:28:28');
-
-
-INSERT INTO `elections` (`id`, `type`, `titre`, `description`, `dateDebut`, `dateFin`, `dateDebutCandidature`, `dateFinCandidature`, `createdAt`, `annee`, `niveau`, `delegueType`, `isActive`, `resultsVisibility`, `tour`, `ecoleId`, `filiereId`, `resultsPublished`, `responsableType`, `publishedAt`) VALUES
-(1, 'SALLE', 'Election Responsable', 'Pour l\'année 2025-2026', '2025-10-05 10:22:00', '2025-10-05 10:38:20', '2025-10-05 10:08:00', '2025-10-05 10:20:00', '2025-10-05 10:07:43', 1, 'PHASE1', NULL, 0, 'MANUAL', 1, 1, 1, 1, 'PREMIER', '2025-10-05 10:55:43'),
-(2, 'ECOLE', 'Election delegué', '2025', '2025-10-06 17:46:00', '2025-10-06 17:51:30', '2025-10-06 17:38:00', '2025-10-06 17:45:00', '2025-10-06 17:37:16', NULL, 'PHASE2', 'PREMIER', 0, 'MANUAL', 1, 1, NULL, 0, NULL, NULL),
-(3, 'ECOLE', 'Election delegué', 'Rien', '2025-10-06 18:01:00', '2025-10-06 18:11:30', '2025-10-06 17:52:00', '2025-10-06 18:00:00', '2025-10-06 17:51:21', NULL, 'PHASE2', 'DEUXIEME', 0, 'MANUAL', 1, 1, NULL, 0, NULL, NULL);
-INSERT INTO `etudiants` (`id`, `userId`, `matricule`, `codeInscription`, `identifiantTemporaire`, `nom`, `prenom`, `annee`, `photoUrl`, `ecoleId`, `filiereId`, `whatsapp`, `additional_info`) VALUES
-(1, '339befd1-a0e7-11f0-8a8b-a2aa80b4014f', NULL, 'UCAO-49KU-5HHT', 'TEMP0IPD788A', 'TCHIDEHOU', 'Dodji Virgile', 1, 'https://i.ibb.co/gLGxrsCq/29258468-208347936584824-7174167565688635392-n-removebg-preview.png', 1, 1, '+229 44999341', 'Rien'),
-(2, '589dc781-a2d8-11f0-8a8b-a2aa80b4014f', NULL, 'UCAO-UDMZ-UCZY', 'TEMP7LIUMHX1', 'UCAO', 'UUC', 1, 'https://i.ibb.co/JjFXtwLS/29258468-208347936584824-7174167565688635392-n.png', 1, 1, '+229 56043081', 'Rien');
-INSERT INTO `filieres` (`id`, `nom`, `ecoleId`, `actif`, `createdAt`) VALUES
-(1, 'Informatique Industrielle et Maintenance', 1, 1, '2025-10-04 05:54:30');
-INSERT INTO `notifications` (`id`, `title`, `message`, `type`, `priority`, `is_read`, `relatedEntity`, `entityId`, `userId`, `createdAt`, `updatedAt`) VALUES
-('96b1a255-1f46-4511-9314-7d3f076c46e4', 'Candidature Approuvée', 'Votre candidature pour l\'élection \"Election Responsable\" a été approuvée.', 'CANDIDATURE', 'HIGH', 1, 'election', '1', '339befd1-a0e7-11f0-8a8b-a2aa80b4014f', '2025-10-05 10:14:15', '2025-10-05 10:32:42');
-INSERT INTO `registration_codes` (`id`, `code`, `createdAt`, `expiresAt`, `used`, `usedAt`, `generatedBy`, `usedBy`) VALUES
-('fbfdb009-a0e6-11f0-8a8b-a2aa80b4014f', 'UCAO-49KU-5HHT', '2025-10-04 05:57:17', '2025-10-07 05:57:18', 1, NULL, 'user_1759556064875_467t2upf9', '339befd1-a0e7-11f0-8a8b-a2aa80b4014f'),
-('fc17263e-a0e6-11f0-8a8b-a2aa80b4014f', 'UCAO-WS2J-Q8VG', '2025-10-04 05:57:18', '2025-10-07 05:57:18', 0, NULL, 'user_1759556064875_467t2upf9', NULL),
-('fc3097be-a0e6-11f0-8a8b-a2aa80b4014f', 'UCAO-XDLW-ZMHU', '2025-10-04 05:57:18', '2025-10-07 05:57:18', 0, NULL, 'user_1759556064875_467t2upf9', NULL),
-('fc4a132c-a0e6-11f0-8a8b-a2aa80b4014f', 'UCAO-ENDW-KMF9', '2025-10-04 05:57:18', '2025-10-07 05:57:18', 0, NULL, 'user_1759556064875_467t2upf9', NULL),
-('fc638d20-a0e6-11f0-8a8b-a2aa80b4014f', 'UCAO-UDMZ-UCZY', '2025-10-04 05:57:18', '2025-10-07 05:57:18', 1, NULL, 'user_1759556064875_467t2upf9', '589dc781-a2d8-11f0-8a8b-a2aa80b4014f');
-
-INSERT INTO `student_activities` (`student_id`, `activity_id`) VALUES
-(2, 1);
-INSERT INTO `student_subactivities` (`student_id`, `activity_id`, `subactivity_id`) VALUES
-(2, 1, 1);
-INSERT INTO `subactivities` (`id`, `activity_id`, `nom`, `description`, `actif`, `icone`, `created_at`, `updated_at`) VALUES
-(1, 1, 'UCAO-TECH', 'Science', 1, 'code', '2025-10-05 12:11:38', '2025-10-05 12:34:47'),
-(2, 2, 'Danse', 'rien', 1, 'music', '2025-10-06 17:32:15', '2025-10-06 17:32:15');
-INSERT INTO `users` (`id`, `email`, `password`, `role`, `createdAt`, `actif`, `tempPassword`, `requirePasswordChange`, `passwordResetExpires`) VALUES
-('339befd1-a0e7-11f0-8a8b-a2aa80b4014f', 'tchidehoudodjivirgile@gmail.com', '$2b$10$xN2G3sl4QOfSsvFMwObmfO2sBOmQXdWPSpwmU29iaGJzKUIHIgZiG', 'ETUDIANT', '2025-10-04 05:58:51', 1, NULL, 0, NULL),
-('589dc781-a2d8-11f0-8a8b-a2aa80b4014f', 'ucaooootech@gmail.com', '$2b$10$DeQkJV4IVExB3INEV3JMUulDZ6W49eewIKHhfhU1O5CsSjkh7w22m', 'ETUDIANT', '2025-10-06 17:17:33', 1, NULL, 0, NULL),
-('user_1759556064875_467t2upf9', 'ucaotech@gmail.com', '$2b$10$HEg02GijbrHI0/eq3PiBCeYiuOiuEPNnlH7w5i/usMdzVobYT.8ZK', 'ADMIN', '2025-10-04 05:34:25', 1, NULL, 0, NULL);
-INSERT INTO `vote_tokens` (`id`, `token`, `userId`, `electionId`, `isUsed`, `createdAt`, `expiresAt`, `usedAt`) VALUES
-(1, 'e1798a96-a1d5-11f0-8a8b-a2aa80b4014f', '339befd1-a0e7-11f0-8a8b-a2aa80b4014f', 1, 1, '2025-10-05 10:27:23', '2025-10-05 11:27:23', '2025-10-05 10:27:27');
-
-INSERT INTO `votes` (`id`, `userId`, `electionId`, `candidateId`, `createdAt`, `poidsVote`) VALUES
-(1, '339befd1-a0e7-11f0-8a8b-a2aa80b4014f', 1, 1, '2025-10-05 10:27:27', 1);
 
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
