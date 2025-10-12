@@ -162,7 +162,7 @@ async function updateElection(id, electionData, userId = null) {
         }
 
         // Fusionner les données existantes avec les nouvelles (les nouvelles écrasent les anciennes)
-        const {
+        let {
             type = existingElection.type,
             titre = existingElection.titre,
             description = existingElection.description,
@@ -177,6 +177,19 @@ async function updateElection(id, electionData, userId = null) {
             delegueType = existingElection.delegueType,
             isActive = existingElection.isActive
         } = electionData;
+
+        // Si on clôture l'élection (isActive passe de true à false)
+        // ET que la dateFin n'est pas encore passée, on la met à maintenant
+        if (existingElection.isActive && !isActive) {
+            const now = new Date();
+            const currentDateFin = new Date(dateFin);
+
+            // Si dateFin est dans le futur, on la met à maintenant
+            if (currentDateFin > now) {
+                dateFin = now.toISOString().slice(0, 19).replace('T', ' ');
+                console.log('🔒 Clôture anticipée - dateFin mise à jour:', dateFin);
+            }
+        }
 
         const query = `
             UPDATE elections 
