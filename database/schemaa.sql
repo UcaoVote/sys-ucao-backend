@@ -408,6 +408,50 @@ CREATE TABLE `votes` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
+-- Seed data for core users
+INSERT INTO `users` (`id`, `email`, `password`, `role`, `createdAt`, `actif`, `tempPassword`, `requirePasswordChange`, `passwordResetExpires`) VALUES
+('USR-STUDENT-1001', 'leonce.adjibade@ucao.bj', NULL, 'ETUDIANT', '2025-10-12 08:30:00', 1, NULL, 0, NULL),
+('USR-STUDENT-1002', 'ayaba.hounkpe@ucao.bj', NULL, 'ETUDIANT', '2025-10-12 08:32:00', 1, NULL, 0, NULL),
+('USR-STUDENT-1003', 'marcel.dossa@ucao.bj', NULL, 'ETUDIANT', '2025-10-12 08:35:00', 1, NULL, 0, NULL),
+('USR-STUDENT-1004', 'sylvie.gnahoui@ucao.bj', NULL, 'ETUDIANT', '2025-10-12 08:37:00', 1, NULL, 0, NULL),
+('USR-STUDENT-1005', 'idriss.toko@ucao.bj', NULL, 'ETUDIANT', '2025-10-12 08:38:00', 1, NULL, 0, NULL),
+('USR-STUDENT-1006', 'prisca.koudjo@ucao.bj', NULL, 'ETUDIANT', '2025-10-12 08:39:00', 1, NULL, 0, NULL),
+('USR-STUDENT-1007', 'mathieu.ahouansou@ucao.bj', NULL, 'ETUDIANT', '2025-10-12 08:40:00', 1, NULL, 0, NULL),
+('USR-STUDENT-1008', 'clarisse.agossa@ucao.bj', NULL, 'ETUDIANT', '2025-10-12 08:41:00', 1, NULL, 0, NULL),
+('USR-STUDENT-1009', 'faustin.adjovi@ucao.bj', NULL, 'ETUDIANT', '2025-10-12 08:42:00', 1, NULL, 0, NULL),
+('USR-STUDENT-1010', 'mireille.loko@ucao.bj', NULL, 'ETUDIANT', '2025-10-12 08:43:00', 1, NULL, 0, NULL);
+
+-- Seed data for schools and programs (idempotent inserts)
+INSERT INTO `ecoles` (`id`, `nom`, `actif`, `createdAt`) VALUES
+(1, 'EGEI', 1, '2025-09-01 08:00:00'),
+(2, 'FSAE', 1, '2025-09-01 08:05:00')
+ON DUPLICATE KEY UPDATE
+  `nom` = VALUES(`nom`),
+  `actif` = VALUES(`actif`),
+  `createdAt` = VALUES(`createdAt`);
+
+INSERT INTO `filieres` (`id`, `nom`, `ecoleId`, `actif`, `createdAt`) VALUES
+(1, 'Informatique Industrielle', 1, 1, '2025-09-02 09:00:00'),
+(2, 'Agroéconomie Durable', 2, 1, '2025-09-02 09:10:00')
+ON DUPLICATE KEY UPDATE
+  `nom` = VALUES(`nom`),
+  `ecoleId` = VALUES(`ecoleId`),
+  `actif` = VALUES(`actif`),
+  `createdAt` = VALUES(`createdAt`);
+
+-- Seed data for students linked to users
+INSERT INTO `etudiants` (`id`, `userId`, `matricule`, `codeInscription`, `identifiantTemporaire`, `nom`, `prenom`, `annee`, `photoUrl`, `ecoleId`, `filiereId`, `whatsapp`, `additional_info`) VALUES
+(1, 'USR-STUDENT-1001', 'UCAO-2025-201', NULL, 'TEMP-201', 'ADJIBADE', 'Leonce', 2, 'https://images.unsplash.com/photo-1544723795-3fb6469f5b39', 1, 1, '+22961001201', 'Membre du club juridique'),
+(2, 'USR-STUDENT-1002', NULL, 'INS-2025-202', 'TEMP-202', 'HOUNKPE', 'Ayaba', 1, 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1', 1, 1, '+22961001202', 'Ambassadrice orientation'),
+(3, 'USR-STUDENT-1003', 'UCAO-2025-203', 'INS-2025-203', 'TEMP-203', 'DOSSA', 'Marcel', 3, 'https://images.unsplash.com/photo-1504593811423-6dd665756598', 1, 1, '+22961001203', 'Responsable logistique BDE'),
+(4, 'USR-STUDENT-1004', 'UCAO-2025-204', 'INS-2025-204', 'TEMP-204', 'GNAHOUI', 'Sylvie', 2, 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?ixlib=rb-4.0.3', 1, 1, '+22961001204', 'Responsable communication BDE'),
+(5, 'USR-STUDENT-1005', 'UCAO-2025-205', 'INS-2025-205', 'TEMP-205', 'TOKO', 'Idriss', 3, 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?ixlib=rb-4.0.3', 1, 1, '+22961001205', 'Tuteur en algorithmique'),
+(6, 'USR-STUDENT-1006', 'UCAO-2025-206', 'INS-2025-206', 'TEMP-206', 'KOUDJO', 'Prisca', 1, 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?ixlib=rb-4.0.3', 1, 1, '+22961001206', 'Club robotique'),
+(7, 'USR-STUDENT-1007', 'UCAO-2025-207', 'INS-2025-207', 'TEMP-207', 'AHOUANSOU', 'Mathieu', 2, 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3', 1, 1, '+22961001207', 'Mentor tutorat C++'),
+(8, 'USR-STUDENT-1008', 'UCAO-2025-208', 'INS-2025-208', 'TEMP-208', 'AGOSSA', 'Clarisse', 3, 'https://images.unsplash.com/photo-1520813792240-56fc4a3765a7?ixlib=rb-4.0.3', 1, 1, '+22961001208', 'Responsable vie associative'),
+(9, 'USR-STUDENT-1009', 'UCAO-2025-209', 'INS-2025-209', 'TEMP-209', 'ADJOVI', 'Faustin', 2, 'https://images.unsplash.com/photo-1521579971123-1192931a1452?ixlib=rb-4.0.3', 1, 1, '+22961001209', 'Animateur hackathons'),
+(10, 'USR-STUDENT-1010', 'UCAO-2025-210', 'INS-2025-210', 'TEMP-210', 'LOKO', 'Mireille', 1, 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?ixlib=rb-4.0.3', 1, 1, '+22961001210', 'Référente UX design');
+
 
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

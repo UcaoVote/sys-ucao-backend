@@ -16,10 +16,8 @@ router.get('/check-eligibility/:electionId', authenticateToken, async (req, res)
 
         // Récupérer les informations de l'étudiant
         const [etudiant] = await connection.execute(`
-            SELECT e.*, ec.id AS ecoleId, f.id AS filiereId 
+            SELECT e.* 
             FROM etudiants e
-            LEFT JOIN ecoles ec ON e.ecole = ec.nom
-            LEFT JOIN filieres f ON e.filiere = f.nom
             WHERE e.userId = ?
         `, [userId]);
 
