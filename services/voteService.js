@@ -340,14 +340,18 @@ class VoteService {
 
         resultats.sort((a, b) => b.scoreFinal - a.scoreFinal);
 
+        // Compter le nombre d'électeurs uniques (pas le nombre total de votes)
+        const uniqueVoters = new Set(voteRows.map(vote => vote.userId)).size;
+
         return {
             election: election,
             statistiques: {
                 totalVotes: voteRows.length,
                 totalPoids: voteRows.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0),
                 totalInscrits: totalInscrits,
+                electeursAyantVote: uniqueVoters,
                 tauxParticipation: totalInscrits > 0
-                    ? parseFloat(((voteRows.length / totalInscrits) * 100).toFixed(2))
+                    ? parseFloat(((uniqueVoters / totalInscrits) * 100).toFixed(2))
                     : 0
             },
             resultats: resultats
@@ -429,6 +433,9 @@ class VoteService {
 
         resultats.sort((a, b) => b.scoreFinal - a.scoreFinal);
 
+        // Compter le nombre d'électeurs uniques (pas le nombre total de votes)
+        const uniqueVoters = new Set(voteRows.map(vote => vote.userId)).size;
+
         return {
             election: election,
             statistiques: {
@@ -437,8 +444,9 @@ class VoteService {
                 votesEtudiants: totalVotesEtudiants,
                 totalPondere: totalPondere,
                 totalInscrits: totalInscrits,
+                electeursAyantVote: uniqueVoters,
                 tauxParticipation: totalInscrits > 0
-                    ? parseFloat(((voteRows.length / totalInscrits) * 100).toFixed(2))
+                    ? parseFloat(((uniqueVoters / totalInscrits) * 100).toFixed(2))
                     : 0
             },
             resultats: resultats
@@ -552,6 +560,9 @@ class VoteService {
 
         resultats.sort((a, b) => b.scoreFinal - a.scoreFinal);
 
+        // Compter le nombre d'électeurs uniques (pas le nombre total de votes)
+        const uniqueVoters = new Set(voteRows.map(vote => vote.userId)).size;
+
         return {
             election: election,
             statistiques: {
@@ -560,8 +571,9 @@ class VoteService {
                 votesEtudiants: votesEtudiants.length,
                 totalPoids: voteRows.reduce((sum, vote) => sum + (vote.poidsVote || 1.0), 0),
                 totalInscrits: totalInscrits,
+                electeursAyantVote: uniqueVoters,
                 tauxParticipation: totalInscrits > 0
-                    ? parseFloat(((voteRows.length / totalInscrits) * 100).toFixed(2))
+                    ? parseFloat(((uniqueVoters / totalInscrits) * 100).toFixed(2))
                     : 0
             },
             resultats: resultats
@@ -642,6 +654,9 @@ class VoteService {
 
         resultats.sort((a, b) => b.scoreFinal - a.scoreFinal);
 
+        // Compter le nombre d'électeurs uniques (pas le nombre total de votes)
+        const uniqueVoters = new Set(voteRows.map(vote => vote.userId)).size;
+
         return {
             election: election,
             statistiques: {
@@ -650,8 +665,9 @@ class VoteService {
                 votesEtudiants: totalVotesEtudiants,
                 totalPondere: totalPondere,
                 totalInscrits: totalInscrits,
+                electeursAyantVote: uniqueVoters,
                 tauxParticipation: totalInscrits > 0
-                    ? parseFloat(((voteRows.length / totalInscrits) * 100).toFixed(2))
+                    ? parseFloat(((uniqueVoters / totalInscrits) * 100).toFixed(2))
                     : 0
             },
             resultats: resultats
