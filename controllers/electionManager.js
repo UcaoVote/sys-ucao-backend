@@ -205,8 +205,10 @@ async function updateElection(id, electionData, userId = null) {
 
         console.log('Valeurs SQL après fusion:', values);
 
-        const [result] = await pool.execute(query, values); if (userId) {
-            await createActivityLog({
+        const [result] = await pool.execute(query, values);
+
+        if (userId) {
+            await ActivityManager.createActivityLog({
                 action: 'Élection modifiée',
                 userId,
                 details: `Élection ${id} mise à jour avec succès`,
@@ -243,7 +245,7 @@ async function deleteElection(id) {
         const deleteQuery = `DELETE FROM elections WHERE id = ?`;
         const [result] = await pool.execute(deleteQuery, [id]);
 
-        await createActivityLog({
+        await ActivityManager.createActivityLog({
             action: 'Élection supprimée',
             userId,
             details: `Élection ${id} supprimée avec succès`,
