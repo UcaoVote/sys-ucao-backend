@@ -150,8 +150,11 @@ async function getElectionById(id) {
     }
 }
 
-async function updateElection(id, electionData) {
+async function updateElection(id, electionData, userId = null) {
     try {
+        // Log pour débogage
+        console.log('Données reçues pour mise à jour:', electionData);
+
         const {
             type, titre, description, dateDebut, dateFin,
             dateDebutCandidature, dateFinCandidature,
@@ -166,21 +169,37 @@ async function updateElection(id, electionData) {
             WHERE id = ?
         `;
 
+        // Convertir TOUS les undefined en null pour éviter l'erreur MySQL
         const values = [
-            type, titre, description, dateDebut, dateFin,
-            dateDebutCandidature, dateFinCandidature, filiereId,
-            annee, ecoleId, niveau, delegueType, isActive, id
+            type ?? null,
+            titre ?? null,
+            description ?? null,
+            dateDebut ?? null,
+            dateFin ?? null,
+            dateDebutCandidature ?? null,
+            dateFinCandidature ?? null,
+            filiereId ?? null,
+            annee ?? null,
+            ecoleId ?? null,
+            niveau ?? null,
+            delegueType ?? null,
+            isActive ?? 1,
+            id
         ];
+
+        console.log('Valeurs SQL:', values);
 
         const [result] = await pool.execute(query, values);
 
-        await createActivityLog({
-            action: 'Élection modifiée',
-            userId,
-            details: `Élection ${id} mise à jour avec succès`,
-            actionType: 'SUCCESS',
-            module: 'ADMIN'
-        });
+        if (userId) {
+            await createActivityLog({
+                action: 'Élection modifiée',
+                userId,
+                details: `Élection ${id} mise à jour avec succès`,
+                actionType: 'SUCCESS',
+                module: 'ADMIN'
+            });
+        }
 
         return result.affectedRows;
     } catch (error) {

@@ -86,7 +86,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     const { id } = req.params;
 
     try {
-        const affectedRows = await electionManager.updateElection(id, req.body);
+        const affectedRows = await electionManager.updateElection(id, req.body, req.user?.id);
 
         if (affectedRows === 0) {
             return res.status(404).json({ error: 'Élection non trouvée' });
