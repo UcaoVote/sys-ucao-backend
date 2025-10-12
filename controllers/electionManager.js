@@ -155,10 +155,27 @@ async function updateElection(id, electionData, userId = null) {
         // Log pour débogage
         console.log('Données reçues pour mise à jour:', electionData);
 
+        // Récupérer l'élection existante d'abord
+        const existingElection = await getElectionById(id);
+        if (!existingElection) {
+            throw new Error('Élection non trouvée');
+        }
+
+        // Fusionner les données existantes avec les nouvelles (les nouvelles écrasent les anciennes)
         const {
-            type, titre, description, dateDebut, dateFin,
-            dateDebutCandidature, dateFinCandidature,
-            filiereId, annee, ecoleId, niveau, delegueType, isActive
+            type = existingElection.type,
+            titre = existingElection.titre,
+            description = existingElection.description,
+            dateDebut = existingElection.dateDebut,
+            dateFin = existingElection.dateFin,
+            dateDebutCandidature = existingElection.dateDebutCandidature,
+            dateFinCandidature = existingElection.dateFinCandidature,
+            filiereId = existingElection.filiereId,
+            annee = existingElection.annee,
+            ecoleId = existingElection.ecoleId,
+            niveau = existingElection.niveau,
+            delegueType = existingElection.delegueType,
+            isActive = existingElection.isActive
         } = electionData;
 
         const query = `
@@ -169,29 +186,26 @@ async function updateElection(id, electionData, userId = null) {
             WHERE id = ?
         `;
 
-        // Convertir TOUS les undefined en null pour éviter l'erreur MySQL
         const values = [
-            type ?? null,
-            titre ?? null,
-            description ?? null,
-            dateDebut ?? null,
-            dateFin ?? null,
-            dateDebutCandidature ?? null,
-            dateFinCandidature ?? null,
-            filiereId ?? null,
-            annee ?? null,
-            ecoleId ?? null,
-            niveau ?? null,
-            delegueType ?? null,
-            isActive ?? 1,
+            type,
+            titre,
+            description,
+            dateDebut,
+            dateFin,
+            dateDebutCandidature,
+            dateFinCandidature,
+            filiereId,
+            annee,
+            ecoleId,
+            niveau,
+            delegueType,
+            isActive,
             id
         ];
 
-        console.log('Valeurs SQL:', values);
+        console.log('Valeurs SQL après fusion:', values);
 
-        const [result] = await pool.execute(query, values);
-
-        if (userId) {
+        const [result] = await pool.execute(query, values); if (userId) {
             await createActivityLog({
                 action: 'Élection modifiée',
                 userId,
