@@ -887,10 +887,11 @@ class VoteService {
                 SELECT 
                     e.*,
                     COUNT(DISTINCT vt.id) as totalInscrits,
+                    COUNT(DISTINCT v.userId) as electeursAyantVote,
                     COUNT(DISTINCT v.id) as totalVotes,
                     CASE 
                         WHEN COUNT(DISTINCT vt.id) > 0 
-                        THEN ROUND((COUNT(DISTINCT v.id) * 100.0 / COUNT(DISTINCT vt.id)), 2)
+                        THEN ROUND((COUNT(DISTINCT v.userId) * 100.0 / COUNT(DISTINCT vt.id)), 2)
                         ELSE 0 
                     END as tauxParticipation,
                     CASE 
@@ -911,6 +912,8 @@ class VoteService {
                 return []; // réponse vide mais valide
             }
 
+            console.log(`✅ ${elections.length} élection(s) terminée(s) chargée(s) avec taux de participation corrigé`);
+
             return elections;
 
         } catch (error) {
@@ -930,11 +933,12 @@ class VoteService {
                 SELECT 
                     e.*,
                     COUNT(DISTINCT vt.id) as totalInscrits,
+                    COUNT(DISTINCT v.userId) as electeursAyantVote,
                     COUNT(DISTINCT v.id) as totalVotes,
                     COUNT(DISTINCT c.id) as totalCandidats,
                     CASE 
                         WHEN COUNT(DISTINCT vt.id) > 0 
-                        THEN ROUND((COUNT(DISTINCT v.id) * 100.0 / COUNT(DISTINCT vt.id)), 2)
+                        THEN ROUND((COUNT(DISTINCT v.userId) * 100.0 / COUNT(DISTINCT vt.id)), 2)
                         ELSE 0 
                     END as tauxParticipation
                 FROM elections e
@@ -948,6 +952,12 @@ class VoteService {
             if (stats.length === 0) {
                 throw new Error('Élection non trouvée');
             }
+
+            console.log(`📊 Stats élection ${electionId}:`, {
+                totalInscrits: stats[0].totalInscrits,
+                electeursAyantVote: stats[0].electeursAyantVote,
+                tauxParticipation: stats[0].tauxParticipation
+            });
 
             return stats[0];
 
