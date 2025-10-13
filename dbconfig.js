@@ -12,14 +12,10 @@ const pool = mysql.createPool({
     connectionLimit: 10,
     queueLimit: 0,
     charset: 'utf8mb4',
-    collation: 'utf8mb4_unicode_ci',
+    // collation retiré car non supporté par mysql2 (utilise charset à la place)
     debug: false,
     trace: false,
-    timezone: 'Z',
-    flags: [
-        '-FOUND_ROWS',
-        '-MULTI_STATEMENTS'
-    ]
+    timezone: 'Z'
 });
 
 

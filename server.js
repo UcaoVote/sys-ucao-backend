@@ -37,11 +37,12 @@ const app = express();
 // 🔐 Trust proxy pour Render
 app.set('trust proxy', 1);
 
-// 🛡️ Middleware de rate limiting
+// 🛡️ Middleware de rate limiting (fix IPv6)
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // max 100 requêtes par IP
-    keyGenerator: (req) => req.ip,
+    standardHeaders: true,
+    legacyHeaders: false,
     message: 'Trop de requêtes, réessayez plus tard.'
 });
 app.use(limiter);
@@ -52,22 +53,36 @@ app.use((req, res, next) => {
     next();
 });
 
-// 🔗 CORS
+// 🔗 CORS - Configuration élargie pour production
 const allowedOrigins = [
     'https://sys-voteucao-frontend-64pi.vercel.app',
-    'http://localhost:3000'
+    'https://sys-voteucao-frontend.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5500',
+    'http://127.0.0.1:3000'
 ];
+
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
+        // Autoriser les requêtes sans origine (Postman, curl, etc.)
+        if (!origin) {
+            return callback(null, true);
+        }
+
+        // Vérifier si l'origine est dans la liste OU si elle contient vercel.app
+        if (allowedOrigins.includes(origin) || origin.includes('vercel.app')) {
             callback(null, true);
         } else {
+            console.warn('❌ CORS bloqué pour origine:', origin);
             callback(new Error('Not allowed by CORS'));
         }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true,
+    optionsSuccessStatus: 200
 }));
 
 // 📦 Middlewares de base
