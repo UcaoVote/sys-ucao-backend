@@ -589,6 +589,7 @@ class VoteService {
             WHERE c.electionId = ?
         `, [election.id]);
 
+
         const [voteRows] = await connection.execute(`
             SELECT 
                 v.*, 
