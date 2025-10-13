@@ -398,6 +398,7 @@ class VoteController {
             statistiques: {
                 totalVotes: fullResults.statistiques.totalVotes,
                 totalInscrits: fullResults.statistiques.totalInscrits,
+                electeursAyantVote: fullResults.statistiques.electeursAyantVote,
                 tauxParticipation: fullResults.statistiques.tauxParticipation,
                 nombreCandidats: fullResults.resultats.length
             },
