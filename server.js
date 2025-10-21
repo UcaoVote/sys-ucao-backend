@@ -27,6 +27,8 @@ import codesRouter from './routes/codes.js';
 import votesRouter from './routes/votes.js';
 import institutionRouter from './routes/institution.js';
 import usersRouter from './routes/users.js';
+import concoursRouter from './routes/concours.js';
+import concoursAdminRouter from './routes/concours-admin.js';
 
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
@@ -135,6 +137,8 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/api/codes', codesRouter);
 app.use('/api/votes', votesRouter);
 app.use('/api', institutionRouter);
+app.use('/api/public', concoursRouter);
+app.use('/api/admin/concours', concoursAdminRouter);
 
 // 🧪 Route de test
 app.get('/api/test', (_req, res) => {
