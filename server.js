@@ -119,7 +119,6 @@ app.get('/api/health', async (req, res) => {
 });
 
 // 🧭 Routes API
-app.use('/api/institution', institutionRouter);
 app.use('/api/import', importRouter);
 app.use('/api/activities', activityStudentsRouter);
 app.use('/api/users', usersRouter);
@@ -137,6 +136,7 @@ app.use('/api/activity', activityRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/codes', codesRouter);
 app.use('/api/votes', votesRouter);
+app.use('/api', institutionRouter);
 app.use('/api/public', concoursRouter);
 app.use('/api/admin/concours', concoursAdminRouter);
 
