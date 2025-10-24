@@ -136,7 +136,7 @@ app.use('/api/activity', activityRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/codes', codesRouter);
 app.use('/api/votes', votesRouter);
-app.use('/api', institutionRouter);
+app.use('/api/institution', institutionRouter);
 app.use('/api/public', concoursRouter);
 app.use('/api/admin/concours', concoursAdminRouter);
 
