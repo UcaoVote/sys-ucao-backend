@@ -7,7 +7,7 @@ class UserController {
             const {
                 email, password, confirmPassword,
                 nom, prenom, filiereId, ecoleId,
-                annee, codeInscription, matricule,
+                annee, matricule,
                 activities, subactivities, whatsapp, additionalInfo
             } = req.body;
 
@@ -85,38 +85,20 @@ class UserController {
 
             let result;
 
-            // 1ère année : code d'inscription
-            if (anneeInt === 1) {
-                if (!codeInscription) {
-                    return res.status(400).json({
-                        success: false,
-                        message: "Code d'inscription requis pour la 1ère année."
-                    });
-                }
-
-                result = await this.handleFirstYearRegistration({
-                    email, password, nom, prenom,
-                    filiereId, ecoleId, annee: anneeInt,
-                    codeInscription, whatsapp, additionalInfo,
-                    activities, subactivities
+            // Tous les étudiants utilisent maintenant le matricule
+            if (!matricule) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Matricule requis pour l\'inscription.'
                 });
             }
-            // 2e/3e année : matricule
-            else {
-                if (!matricule) {
-                    return res.status(400).json({
-                        success: false,
-                        message: 'Matricule requis pour les années supérieures.'
-                    });
-                }
 
-                result = await this.handleUpperYearRegistration({
-                    email, password, nom, prenom,
-                    filiereId, ecoleId, annee: anneeInt,
-                    matricule, whatsapp, additionalInfo,
-                    activities, subactivities
-                });
-            }
+            result = await this.handleRegistration({
+                email, password, nom, prenom,
+                filiereId, ecoleId, annee: anneeInt,
+                matricule, whatsapp, additionalInfo,
+                activities, subactivities
+            });
 
             res.status(201).json(result);
         } catch (error) {
@@ -129,77 +111,7 @@ class UserController {
         }
     }
 
-    async handleFirstYearRegistration(studentData) {
-        const connection = await pool.getConnection();
-        try {
-            await connection.beginTransaction();
-
-            // Valider le code d'inscription
-            const codeValidation = await userService.validateRegistrationCode(studentData.codeInscription);
-            if (!codeValidation.valid) {
-                throw new Error(codeValidation.message);
-            }
-
-            // Créer l'utilisateur
-            const userId = await userService.createUser(studentData);
-
-            // Créer l'étudiant et récupérer l'ID réel
-            const studentId = await userService.createFirstYearStudent(studentData, userId);
-
-            // Marquer le code comme utilisé
-            await userService.markCodeAsUsed(studentData.codeInscription, userId);
-
-            // Gérer les activités principales
-            const activities = Array.isArray(studentData.activities)
-                ? studentData.activities.filter(activityId =>
-                    activityId !== undefined &&
-                    activityId !== null &&
-                    !isNaN(parseInt(activityId)))
-                : [];
-
-            if (activities.length > 0) {
-                await this.insertStudentActivities(studentId, activities, connection);
-            }
-
-            // Gérer les sous-activités
-            if (studentData.subactivities && typeof studentData.subactivities === 'object') {
-                await this.insertStudentSubactivities(studentId, studentData.subactivities, connection);
-            }
-
-            await connection.commit();
-
-            // Récupérer les noms en clair
-            const [ecoleRows] = await connection.execute(`SELECT nom FROM ecoles WHERE id = ?`, [studentData.ecoleId]);
-            const [filiereRows] = await connection.execute(`SELECT nom FROM filieres WHERE id = ?`, [studentData.filiereId]);
-
-            return {
-                success: true,
-                message: "Inscription réussie.",
-                data: {
-                    student: {
-                        id: userId,
-                        nom: studentData.nom,
-                        prenom: studentData.prenom,
-                        identifiantTemporaire: studentId,
-                        annee: studentData.annee,
-                        ecole: ecoleRows[0]?.nom || null,
-                        filiere: filiereRows[0]?.nom || null,
-                        whatsapp: studentData.whatsapp || null,
-                        additionalInfo: studentData.additionalInfo || null,
-                        activities: activities,
-                        subactivities: studentData.subactivities || {}
-                    }
-                }
-            };
-        } catch (error) {
-            await connection.rollback();
-            throw error;
-        } finally {
-            await connection.release();
-        }
-    }
-
-    async handleUpperYearRegistration(studentData) {
+    async handleRegistration(studentData) {
         const connection = await pool.getConnection();
         try {
             await connection.beginTransaction();

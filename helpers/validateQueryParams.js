@@ -44,9 +44,9 @@ export function buildStudentFilters({ filiere, annee, ecole, status, search }) {
     }
 
     if (search) {
-        whereClause += ' AND (e.nom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ? OR e.codeInscription LIKE ? OR e.identifiantTemporaire LIKE ?)';
+        whereClause += ' AND (e.nom LIKE ? OR e.prenom LIKE ? OR e.matricule LIKE ? OR e.identifiantTemporaire LIKE ?)';
         const searchPattern = `%${search}%`;
-        queryParams.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+        queryParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
 
     return { whereClause, queryParams };

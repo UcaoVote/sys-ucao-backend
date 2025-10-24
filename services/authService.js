@@ -50,10 +50,10 @@ class AuthService {
 
             // Test avec l'identifiant nettoyé - CHERCHER DANS TOUTES LES COLONNES
             const [exactMatch] = await connection.execute(
-                `SELECT matricule, codeInscription, identifiantTemporaire 
-             FROM etudiants 
-             WHERE matricule = ? OR codeInscription = ? OR identifiantTemporaire = ?`,
-                [cleanedIdentifier, cleanedIdentifier, cleanedIdentifier]
+                `SELECT matricule, identifiantTemporaire
+             FROM etudiants
+             WHERE matricule = ? OR identifiantTemporaire = ?`,
+                [cleanedIdentifier, cleanedIdentifier]
             );
             console.log('🎯 RECHERCHE AVEC NETTOYAGE:', exactMatch);
 
@@ -64,14 +64,14 @@ class AuthService {
                 const [rows] = await connection.execute(
                     `SELECT u.id as user_id, u.email as user_email, u.password as user_password, 
                     u.tempPassword, u.requirePasswordChange, u.actif, u.role,
-                    e.id as student_id, e.userId as student_userId, e.matricule, e.codeInscription, 
+                    e.id as student_id, e.userId as student_userId, e.matricule, 
                     e.identifiantTemporaire, e.nom as student_nom, e.prenom as student_prenom,
                     e.annee, e.photoUrl, e.ecoleId, e.filiereId, e.whatsapp
              FROM etudiants e
              LEFT JOIN users u ON e.userId = u.id
-             WHERE e.matricule = ? OR e.codeInscription = ? OR e.identifiantTemporaire = ?
+             WHERE e.matricule = ? OR e.identifiantTemporaire = ?
              LIMIT 1`,
-                    [cleanedIdentifier, cleanedIdentifier, cleanedIdentifier]
+                    [cleanedIdentifier, cleanedIdentifier]
                 );
 
                 if (rows.length > 0) {
@@ -91,7 +91,6 @@ class AuthService {
                         id: r.student_id,
                         userId: r.student_userId,
                         matricule: r.matricule,
-                        codeInscription: r.codeInscription,
                         identifiantTemporaire: r.identifiantTemporaire,
                         nom: r.student_nom,
                         prenom: r.student_prenom,
@@ -125,7 +124,7 @@ class AuthService {
             const [userRows] = await connection.execute(
                 `SELECT u.id, u.email, u.password, u.tempPassword, u.requirePasswordChange, 
                     u.actif, u.role, u.createdAt,
-                    e.id as student_id, e.userId as student_userId, e.matricule, e.codeInscription, 
+                    e.id as student_id, e.userId as student_userId, e.matricule, 
                     e.identifiantTemporaire, e.nom as student_nom, e.prenom as student_prenom,
                     e.annee, e.photoUrl, e.ecoleId, e.filiereId, e.whatsapp
              FROM users u
@@ -168,7 +167,6 @@ class AuthService {
                         id: r.student_id,
                         userId: r.student_userId,
                         matricule: r.matricule,
-                        codeInscription: r.codeInscription,
                         identifiantTemporaire: r.identifiantTemporaire,
                         nom: r.student_nom,
                         prenom: r.student_prenom,

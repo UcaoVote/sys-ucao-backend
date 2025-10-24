@@ -188,7 +188,6 @@ router.get('/elections/:electionId', authenticateToken, async (req, res) => {
                 c.createdAt,
                 u.email,
                 et.id AS etudiantId,
-                et.codeInscription,
                 et.nom AS etudiantNom,
                 et.prenom AS etudiantPrenom,
                 et.annee,

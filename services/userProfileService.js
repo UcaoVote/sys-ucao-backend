@@ -52,7 +52,6 @@ class UserProfileService {
                 email: etudiant.email,
                 role: etudiant.role,
                 matricule: etudiant.matricule,
-                codeInscription: etudiant.codeInscription,
                 nom: etudiant.nom,
                 prenom: etudiant.prenom,
                 filiere: etudiant.nomFiliere,

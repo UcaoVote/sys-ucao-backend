@@ -114,10 +114,10 @@ export class PasswordResetService {
 
                 // CORRECTION : Récupérer les informations complètes de l'étudiant
                 const [updatedStudentRows] = await connection.execute(
-                    `SELECT e.nom, e.prenom, e.matricule, e.codeInscription, e.identifiantTemporaire,
+                    `SELECT e.nom, e.prenom, e.matricule, e.identifiantTemporaire,
                         u.email, u.requirePasswordChange, u.passwordResetExpires
-                 FROM etudiants e 
-                 INNER JOIN users u ON e.userId = u.id 
+                 FROM etudiants e
+                 INNER JOIN users u ON e.userId = u.id
                  WHERE e.id = ?`,
                     [studentId]
                 );

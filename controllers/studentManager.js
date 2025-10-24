@@ -6,7 +6,6 @@ async function getAllStudents() {
             SELECT 
                 e.id, 
                 e.matricule,
-                e.codeInscription,
                 e.nom, 
                 e.prenom, 
                 f.nom AS nomFiliere,
@@ -137,14 +136,13 @@ async function addStudent(studentData) {
         // Insérer dans la table etudiants
         await connection.execute(`
             INSERT INTO etudiants (
-                userId, matricule, codeInscription, nom, prenom,
+                userId, matricule, nom, prenom,
                 filiereId, annee, ecoleId
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         `, [
             userId,
             sanitize(studentData.matricule),
-            sanitize(studentData.codeInscription),
             sanitize(studentData.nom),
             sanitize(studentData.prenom),
             sanitize(studentData.filiereId),

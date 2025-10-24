@@ -49,30 +49,6 @@ class UserService {
         }
     }
 
-    // Vérifier le code d'inscription
-    async validateRegistrationCode(code) {
-        let connection;
-        try {
-            connection = await pool.getConnection();
-            const [rows] = await connection.execute(
-                'SELECT id, used FROM registration_codes WHERE code = ?',
-                [code]
-            );
-
-            if (rows.length === 0) {
-                return { valid: false, message: "Ce code d'inscription n'existe pas." };
-            }
-
-            if (rows[0].used) {
-                return { valid: false, message: "Ce code d'inscription a déjà été utilisé." };
-            }
-
-            return { valid: true, codeId: rows[0].id };
-        } finally {
-            if (connection) await connection.release();
-        }
-    }
-
     // Vérifier le matricule
     async validateMatricule(matricule) {
         let connection;
@@ -121,39 +97,7 @@ class UserService {
         }
     }
 
-    // Créer un étudiant (1ère année) - CORRIGÉ
-    async createFirstYearStudent(studentData, userId) {
-        let connection;
-        try {
-            connection = await pool.getConnection();
-
-            const temporaryIdentifiant = this.generateTemporaryIdentifiant();
-
-            const [result] = await connection.execute(
-                `INSERT INTO etudiants 
-                (userId, nom, prenom, identifiantTemporaire, filiereId, annee, codeInscription, ecoleId, whatsapp, additional_info) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    userId,
-                    studentData.nom,
-                    studentData.prenom,
-                    temporaryIdentifiant,
-                    studentData.filiereId,
-                    studentData.annee,
-                    studentData.codeInscription,
-                    studentData.ecoleId,
-                    studentData.whatsapp || null,
-                    studentData.additionalInfo || null
-                ]
-            );
-
-            return temporaryIdentifiant;
-        } finally {
-            if (connection) await connection.release();
-        }
-    }
-
-    // Mettre à jour un étudiant existant (2e/3e année) - CORRIGÉ
+    // Mettre à jour un étudiant existant - CORRIGÉ
     async updateStudent(studentData, studentId, userId) {
         let connection;
         try {
@@ -162,8 +106,8 @@ class UserService {
             const temporaryIdentifiant = studentData.tempId || this.generateTemporaryIdentifiant();
 
             await connection.execute(
-                `UPDATE etudiants 
-                SET userId = ?, nom = ?, prenom = ?, identifiantTemporaire = ?, filiereId = ?, annee = ?, ecoleId = ?, whatsapp = ?, additional_info = ? 
+                `UPDATE etudiants
+                SET userId = ?, nom = ?, prenom = ?, identifiantTemporaire = ?, filiereId = ?, annee = ?, ecoleId = ?, whatsapp = ?, additional_info = ?
                 WHERE id = ?`,
                 [
                     userId,
@@ -180,21 +124,6 @@ class UserService {
             );
 
             return temporaryIdentifiant;
-        } finally {
-            if (connection) await connection.release();
-        }
-    }
-
-    // Marquer un code d'inscription comme utilisé
-    async markCodeAsUsed(code, userId) {
-        let connection;
-        try {
-            connection = await pool.getConnection();
-
-            await connection.execute(
-                'UPDATE registration_codes SET used = TRUE, usedBy = ? WHERE code = ?',
-                [userId, code]
-            );
         } finally {
             if (connection) await connection.release();
         }

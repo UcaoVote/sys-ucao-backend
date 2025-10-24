@@ -24,8 +24,8 @@ export const importService = {
             const erreursEtudiant = [];
 
             // Vérifier qu'au moins un identifiant est fourni
-            if (!etudiant.matricule && !etudiant.codeInscription) {
-                erreursEtudiant.push('Matricule ou code d\'inscription requis');
+            if (!etudiant.matricule) {
+                erreursEtudiant.push('Matricule requis');
             }
 
             // Validation des champs obligatoires
@@ -54,10 +54,6 @@ export const importService = {
                 erreursEtudiant.push('Matricule trop long (max 50 caractères)');
             }
 
-            if (etudiant.codeInscription && etudiant.codeInscription.length > 50) {
-                erreursEtudiant.push('Code d\'inscription trop long (max 50 caractères)');
-            }
-
             if (etudiant.whatsapp && etudiant.whatsapp.length > 30) {
                 erreursEtudiant.push('Numéro WhatsApp trop long (max 30 caractères)');
             }
@@ -73,7 +69,6 @@ export const importService = {
                 // Normaliser les données
                 donneesValides.push({
                     matricule: etudiant.matricule ? etudiant.matricule.trim() : null,
-                    codeInscription: etudiant.codeInscription ? etudiant.codeInscription.trim() : null,
                     nom: etudiant.nom.trim(),
                     prenom: etudiant.prenom.trim(),
                     ecole: etudiant.ecole.trim(),
@@ -113,11 +108,6 @@ export const importService = {
                     params.push(etudiant.matricule);
                 }
 
-                if (etudiant.codeInscription) {
-                    conditions.push('codeInscription = ?');
-                    params.push(etudiant.codeInscription);
-                }
-
                 if (etudiant.email) {
                     // Vérifier aussi les doublons d'email dans users
                     const [existingEmail] = await connection.execute(
@@ -136,8 +126,8 @@ export const importService = {
                 if (conditions.length === 0) continue;
 
                 const query = `
-                    SELECT id, matricule, codeInscription 
-                    FROM etudiants 
+                    SELECT id, matricule
+                    FROM etudiants
                     WHERE ${conditions.join(' OR ')}
                 `;
 
@@ -214,11 +204,6 @@ export const importService = {
             params.push(etudiant.matricule);
         }
 
-        if (etudiant.codeInscription) {
-            conditions.push('codeInscription = ?');
-            params.push(etudiant.codeInscription);
-        }
-
         if (conditions.length === 0) return null;
 
         const [existing] = await connection.execute(
@@ -279,7 +264,6 @@ export const importService = {
             prenom: nouvellesDonnees.prenom,
             email: nouvellesDonnees.email || etudiantExistant.email,
             matricule: etudiantExistant.matricule,
-            codeInscription: etudiantExistant.codeInscription,
             ecole: nouvellesDonnees.ecole,
             filiere: nouvellesDonnees.filiere,
             action: 'MIS_A_JOUR'
@@ -344,10 +328,6 @@ export const importService = {
             conditions.push('matricule = ?');
             params.push(etudiant.matricule);
         }
-        if (etudiant.codeInscription) {
-            conditions.push('codeInscription = ?');
-            params.push(etudiant.codeInscription);
-        }
 
         if (conditions.length > 0) {
             const [existing] = await connection.execute(
@@ -369,7 +349,7 @@ export const importService = {
         const identifiantTemporaire = this.genererIdentifiantTemporaire();
 
         // 6. Générer un email si non fourni
-        const email = etudiant.email || `${etudiant.matricule || etudiant.codeInscription || identifiantTemporaire}@ucao-temp.com`;
+        const email = etudiant.email || `${etudiant.matricule || identifiantTemporaire}@ucao-temp.com`;
 
         // 7. Créer le COMPTE USER (avec email mais SANS MOT DE PASSE)
         const userId = this.genererUserId();
@@ -383,12 +363,11 @@ export const importService = {
         // 8. Créer l'ÉTUDIANT (lié au user)
         const [result] = await connection.execute(
             `INSERT INTO etudiants 
-             (userId, matricule, codeInscription, identifiantTemporaire, nom, prenom, annee, ecoleId, filiereId, whatsapp) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (userId, matricule, identifiantTemporaire, nom, prenom, annee, ecoleId, filiereId, whatsapp) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 userId,
                 etudiant.matricule,
-                etudiant.codeInscription,
                 identifiantTemporaire,
                 etudiant.nom,
                 etudiant.prenom,
@@ -407,7 +386,6 @@ export const importService = {
             prenom: etudiant.prenom,
             email: email,
             matricule: etudiant.matricule,
-            codeInscription: etudiant.codeInscription,
             ecole: etudiant.ecole,
             filiere: etudiant.filiere,
             action: 'CRÉÉ'

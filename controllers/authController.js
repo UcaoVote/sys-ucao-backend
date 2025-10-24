@@ -61,7 +61,7 @@ class AuthController {
 
             // Ancienne logique (pour les étudiants sans user)
             if (user.student && !user.id) {
-                const emailToUse = user.student.email || `${user.student.matricule || user.student.codeInscription || user.student.identifiantTemporaire}@no-email.local`;
+                const emailToUse = user.student.email || `${user.student.matricule || user.student.identifiantTemporaire}@no-email.local`;
                 const newUserId = await userService.createUser({
                     email: emailToUse,
                     password

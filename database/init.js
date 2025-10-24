@@ -79,7 +79,6 @@ function getManualQueries() {
             id INT AUTO_INCREMENT PRIMARY KEY,
             userId VARCHAR(191) UNIQUE,
             matricule VARCHAR(50) UNIQUE,
-            codeInscription VARCHAR(50) UNIQUE,
             identifiantTemporaire VARCHAR(50) UNIQUE,
             nom VARCHAR(100),
             prenom VARCHAR(100),
