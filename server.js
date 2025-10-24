@@ -119,6 +119,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 // 🧭 Routes API
+app.use('/api/institution', institutionRouter);
 app.use('/api/import', importRouter);
 app.use('/api/activities', activityStudentsRouter);
 app.use('/api/users', usersRouter);
