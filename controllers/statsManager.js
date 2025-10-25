@@ -745,9 +745,13 @@ async function exportStats(req, res) {
 
         const workbook = new ExcelJS.Workbook();
 
-        // Métadonnées
-        workbook.creator = 'UCAO Admin';
-        workbook.lastModifiedBy = 'Système Vote UCAO';
+        // Métadonnées - Utiliser le nom de l'admin connecté
+        const adminName = req.user?.admin
+            ? `${req.user.admin.prenom} ${req.user.admin.nom}`.trim()
+            : 'UCAO Admin';
+
+        workbook.creator = adminName;
+        workbook.lastModifiedBy = adminName;
         workbook.created = new Date();
         workbook.modified = new Date();
 
