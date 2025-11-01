@@ -57,13 +57,8 @@ app.use((req, res, next) => {
 
 // 🔗 CORS - Configuration élargie pour production
 const allowedOrigins = [
-    'https://sys-voteucao-frontend-64pi.vercel.app',
-    'https://sys-voteucao-frontend.vercel.app',
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://127.0.0.1:5500',
-    'http://127.0.0.1:3000'
+    //'https://sys-voteucao-frontend-64pi.vercel.app',
+    'https://oeuvreuniversitaire.ucaobenin.org'
 ];
 
 app.use(cors({
