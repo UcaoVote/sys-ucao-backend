@@ -21,9 +21,10 @@ class MySQLProxy {
     }
 
     /**
-     * Exécuter une requête SQL
+     * Exécuter une requête SQL (compatible avec mysql2)
      * @param {string} query - La requête SQL
      * @param {array} params - Les paramètres préparés
+     * @returns {Array} [rows, fields] - Format compatible mysql2
      */
     async query(query, params = []) {
         try {
@@ -36,7 +37,11 @@ class MySQLProxy {
                 throw new Error(response.data.error);
             }
 
-            return response.data;
+            // Retourner au format [rows, fields] comme mysql2
+            const rows = response.data.data || [];
+            const fields = []; // Les champs ne sont pas retournés par le proxy, mais rarement utilisés
+
+            return [rows, fields];
         } catch (error) {
             if (error.response) {
                 throw new Error(`MySQL Proxy Error: ${error.response.data.error || error.message}`);
@@ -54,25 +59,61 @@ class MySQLProxy {
     }
 
     /**
-     * Exécuter une requête INSERT/UPDATE/DELETE
+     * Exécuter une requête INSERT/UPDATE/DELETE (compatible mysql2)
+     * @returns {Array} [ResultSetHeader, fields]
      */
     async execute(query, params = []) {
-        const result = await this.query(query, params);
-        return {
-            affectedRows: result.affectedRows || 0,
-            insertId: result.lastInsertId || 0
-        };
+        try {
+            const response = await this.client.post('', {
+                query,
+                params
+            });
+
+            if (!response.data.success) {
+                throw new Error(response.data.error);
+            }
+
+            // Retourner au format [ResultSetHeader, fields] comme mysql2
+            const resultSetHeader = {
+                fieldCount: 0,
+                affectedRows: response.data.affectedRows || 0,
+                insertId: response.data.lastInsertId || 0,
+                info: '',
+                serverStatus: 2,
+                warningStatus: 0
+            };
+
+            return [resultSetHeader, []];
+        } catch (error) {
+            if (error.response) {
+                throw new Error(`MySQL Proxy Error: ${error.response.data.error || error.message}`);
+            }
+            throw error;
+        }
     }
 
     /**
      * Obtenir une connexion (pour compatibilité avec mysql2)
+     * Note: Les transactions ne sont pas réellement supportées via HTTP
+     * mais on simule le comportement pour la compatibilité
      */
-    async getConnection() {
-        return {
+    getConnection() {
+        return Promise.resolve({
             query: this.query.bind(this),
             execute: this.execute.bind(this),
-            release: () => { } // No-op car HTTP est stateless
-        };
+            ping: async () => { await this.query('SELECT 1'); },
+            beginTransaction: async () => {
+                console.warn('⚠️ Transactions simulées - pas de rollback réel possible via HTTP');
+            },
+            commit: async () => {
+                // No-op - les requêtes sont auto-commit via HTTP
+            },
+            rollback: async () => {
+                console.warn('⚠️ Rollback simulé - impossible via HTTP');
+            },
+            release: () => { }, // No-op car HTTP est stateless
+            destroy: () => { }  // No-op
+        });
     }
 
     /**
