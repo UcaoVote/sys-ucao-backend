@@ -1,7 +1,7 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import bcrypt from 'bcrypt';
-import pool from '../dbconfig.js';
+import pool from '../database/dbconfig.js';
 
 // Configuration ImgBB
 const IMGBB_UPLOAD_URL = 'https://api.imgbb.com/1/upload';

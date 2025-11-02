@@ -1,5 +1,5 @@
 // notificationsController.js
-import pool from '../dbconfig.js';
+import pool from '../database/dbconfig.js';
 import NotificationService from '../services/notificationService.js';
 
 

@@ -1,4 +1,4 @@
-import pool from '../dbconfig.js';
+import pool from '../database/dbconfig.js';
 
 class ActivityController {
     // Récupérer toutes les catégories principales

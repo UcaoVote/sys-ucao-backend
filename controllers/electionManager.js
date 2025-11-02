@@ -1,4 +1,4 @@
-import pool from '../dbconfig.js'
+import pool from '../database/dbconfig.js'
 import { paginateResults } from '../helpers/paginate.js';
 import NotificationService from '../services/notificationService.js';
 import ActivityManager from '../controllers/activityManager.js';

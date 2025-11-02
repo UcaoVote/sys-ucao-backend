@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import pool from './dbconfig.js';
+import pool from './database/dbconfig.js';
 import './scripts/reminders.js';
 import electionInitializer from './scripts/initElections.js';
 import rateLimit from 'express-rate-limit';

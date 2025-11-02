@@ -1,7 +1,7 @@
 import express from 'express';
 import ExcelJS from 'exceljs';
 import activityController from '../controllers/activityController.js';
-import pool from '../dbconfig.js';
+import pool from '../database/dbconfig.js';
 import { authenticateToken, requireAdmin } from '../middlewares/auth.js';
 
 const router = express.Router();

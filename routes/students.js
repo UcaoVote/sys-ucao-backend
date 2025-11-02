@@ -3,7 +3,7 @@ import { authenticateToken } from '../middlewares/auth.js';
 import studentManager from '../controllers/studentManager.js';
 import { paginateResults } from '../helpers/paginate.js';
 import { searchEtudiantsByKeyword } from '../helpers/searchEtudiants.js';
-import pool from '../dbconfig.js';
+import pool from '../database/dbconfig.js';
 
 
 const router = express.Router();

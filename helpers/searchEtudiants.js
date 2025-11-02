@@ -5,7 +5,7 @@
  * @param {string} keyword - Mot-clé à rechercher
  * @returns {Promise<Array>} - Liste des étudiants correspondants
  */
-import pool from '../dbconfig.js';
+import pool from '../database/dbconfig.js';
 
 export async function searchEtudiantsByKeyword(keyword) {
     const sanitized = `%${keyword.trim()}%`;

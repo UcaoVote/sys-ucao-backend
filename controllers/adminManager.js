@@ -1,5 +1,5 @@
 import bcrypt from 'bcrypt';
-import pool from '../dbconfig.js';
+import pool from '../database/dbconfig.js';
 import { generateUserId } from '../helpers/generateUserId.js';
 
 class AdminService {

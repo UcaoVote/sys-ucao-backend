@@ -1,6 +1,6 @@
 // scripts/reminders.js
 import cron from 'node-cron';
-import pool from '../dbconfig.js';
+import pool from '../database/dbconfig.js';
 import NotificationService from '../services/notificationService.js';
 
 // Tâche planifiée pour envoyer des rappels tous les jours à 9h

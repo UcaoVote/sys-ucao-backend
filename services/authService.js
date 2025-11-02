@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
-import pool from '../dbconfig.js';
+import pool from '../database/dbconfig.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_NORMAL = '8h';

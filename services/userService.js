@@ -1,5 +1,5 @@
 import bcrypt from 'bcrypt';
-import pool from '../dbconfig.js';
+import pool from '../database/dbconfig.js';
 
 class UserService {
 

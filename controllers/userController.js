@@ -1,5 +1,5 @@
 import userService from '../services/userService.js';
-import pool from '../dbconfig.js';
+import pool from '../database/dbconfig.js';
 
 class UserController {
     async register(req, res) {

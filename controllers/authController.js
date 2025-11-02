@@ -1,6 +1,6 @@
 import authService from '../services/authService.js';
 import userService from '../services/userService.js';
-import pool from '../dbconfig.js'; // Import ajouté
+import pool from '../database/dbconfig.js'; // Import ajouté
 
 class AuthController {
     constructor() {

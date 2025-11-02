@@ -1,4 +1,4 @@
-import pool from '../dbconfig.js'
+import pool from '../database/dbconfig.js'
 // 1. Lister tous les étudiants 
 async function getAllStudents() {
     try {

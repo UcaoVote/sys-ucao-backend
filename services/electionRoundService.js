@@ -1,4 +1,4 @@
-import pool from '../dbconfig.js';
+import pool from '../database/dbconfig.js';
 import resultService from './resultService.js';
 
 class ElectionRoundService {

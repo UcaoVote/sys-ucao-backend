@@ -1,6 +1,6 @@
 // activityController.js
 
-import pool from '../dbconfig.js';
+import pool from '../database/dbconfig.js';
 
 async function getActivityLogs(req, res) {
     try {

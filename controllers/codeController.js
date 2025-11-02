@@ -1,5 +1,5 @@
 import { toInt, generateRegistrationCode } from '../helpers/codeHelpers.js';
-import pool from '../dbconfig.js';
+import pool from '../database/dbconfig.js';
 import activityManager from '../controllers/activityManager.js';
 
 

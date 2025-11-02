@@ -1,4 +1,4 @@
-import pool from '../dbconfig.js'
+import pool from '../database/dbconfig.js'
 import ExcelJS from 'exceljs'
 
 // Statistiques générales
