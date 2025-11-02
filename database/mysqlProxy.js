@@ -28,10 +28,13 @@ class MySQLProxy {
      */
     async query(query, params = []) {
         try {
-            const response = await this.client.post('', {
-                query,
-                params
-            });
+            // Ne pas envoyer params s'il est vide (évite l'erreur HY093 côté PHP)
+            const payload = { query };
+            if (params && params.length > 0) {
+                payload.params = params;
+            }
+
+            const response = await this.client.post('', payload);
 
             if (!response.data.success) {
                 throw new Error(response.data.error);
@@ -65,10 +68,13 @@ class MySQLProxy {
      */
     async execute(query, params = []) {
         try {
-            const response = await this.client.post('', {
-                query,
-                params
-            });
+            // Ne pas envoyer params s'il est vide (évite l'erreur HY093 côté PHP)
+            const payload = { query };
+            if (params && params.length > 0) {
+                payload.params = params;
+            }
+
+            const response = await this.client.post('', payload);
 
             if (!response.data.success) {
                 throw new Error(response.data.error);
