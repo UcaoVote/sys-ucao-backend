@@ -59,8 +59,9 @@ class MySQLProxy {
     }
 
     /**
-     * Exécuter une requête INSERT/UPDATE/DELETE (compatible mysql2)
-     * @returns {Array} [ResultSetHeader, fields]
+     * Exécuter une requête (compatible mysql2)
+     * Retourne [rows, fields] pour SELECT ou [ResultSetHeader, fields] pour INSERT/UPDATE/DELETE
+     * @returns {Array} [rows|ResultSetHeader, fields]
      */
     async execute(query, params = []) {
         try {
@@ -73,17 +74,26 @@ class MySQLProxy {
                 throw new Error(response.data.error);
             }
 
-            // Retourner au format [ResultSetHeader, fields] comme mysql2
-            const resultSetHeader = {
-                fieldCount: 0,
-                affectedRows: response.data.affectedRows || 0,
-                insertId: response.data.lastInsertId || 0,
-                info: '',
-                serverStatus: 2,
-                warningStatus: 0
-            };
+            // Détecter le type de requête
+            const queryType = query.trim().split(/\s+/)[0].toUpperCase();
+            const isSelect = queryType === 'SELECT' || queryType === 'SHOW' || queryType === 'DESCRIBE';
 
-            return [resultSetHeader, []];
+            if (isSelect) {
+                // Pour SELECT : retourner [rows, fields]
+                const rows = response.data.data || [];
+                return [rows, []];
+            } else {
+                // Pour INSERT/UPDATE/DELETE : retourner [ResultSetHeader, fields]
+                const resultSetHeader = {
+                    fieldCount: 0,
+                    affectedRows: response.data.affectedRows || 0,
+                    insertId: response.data.lastInsertId || 0,
+                    info: '',
+                    serverStatus: 2,
+                    warningStatus: 0
+                };
+                return [resultSetHeader, []];
+            }
         } catch (error) {
             if (error.response) {
                 throw new Error(`MySQL Proxy Error: ${error.response.data.error || error.message}`);
