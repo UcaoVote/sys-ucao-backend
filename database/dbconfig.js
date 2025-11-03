@@ -2,9 +2,9 @@ import mysqlProxy from './mysqlProxy.js';
 import dotenv from 'dotenv';
 dotenv.config();
 
-// 🔄 Utiliser le proxy MySQL HTTP en production
-// Car le firewall bloque les connexions directes TCP sur le port 3306
-const useProxy = process.env.USE_MYSQL_PROXY === 'true' || process.env.NODE_ENV === 'production';
+// 🔄 Utiliser le proxy MySQL HTTP seulement si explicitement activé
+// Le proxy n'est plus nécessaire car la base de données est accessible directement
+const useProxy = process.env.USE_MYSQL_PROXY === 'true';
 
 let pool;
 
