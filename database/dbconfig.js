@@ -6,6 +6,17 @@ dotenv.config();
 // Le proxy n'est plus nécessaire car la base de données est accessible directement
 const useProxy = process.env.USE_MYSQL_PROXY === 'true';
 
+// 🐛 DEBUG - Afficher la configuration au démarrage
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+console.log('🔧 CONFIGURATION BASE DE DONNÉES');
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+console.log('📌 NODE_ENV:', process.env.NODE_ENV);
+console.log('📌 USE_MYSQL_PROXY:', process.env.USE_MYSQL_PROXY);
+console.log('📌 useProxy (calculé):', useProxy);
+console.log('📌 MYSQLHOST:', process.env.MYSQLHOST);
+console.log('📌 MYSQLDATABASE:', process.env.MYSQLDATABASE);
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
 let pool;
 
 if (useProxy) {
