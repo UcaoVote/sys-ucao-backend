@@ -118,10 +118,11 @@ router.put('/my-activities', authenticateToken, async (req, res) => {
 
         // Ajouter les nouvelles activités
         if (activities.length > 0) {
-            const activityValues = activities.map(activityId => [studentId, activityId]);
-            await connection.query(
-                'INSERT INTO student_activities (student_id, activity_id) VALUES ?',
-                [activityValues]
+            const placeholders = activities.map(() => '(?, ?)').join(',');
+            const values = activities.flatMap(activityId => [studentId, activityId]);
+            await connection.execute(
+                `INSERT INTO student_activities (student_id, activity_id) VALUES ${placeholders}`,
+                values
             );
         }
 
@@ -157,9 +158,11 @@ router.put('/my-activities', authenticateToken, async (req, res) => {
                 });
 
                 if (validInsert.length > 0) {
-                    await connection.query(
-                        'INSERT INTO student_subactivities (student_id, activity_id, subactivity_id) VALUES ?',
-                        [validInsert]
+                    const subPlaceholders = validInsert.map(() => '(?, ?, ?)').join(',');
+                    const subValues = validInsert.flat();
+                    await connection.execute(
+                        `INSERT INTO student_subactivities (student_id, activity_id, subactivity_id) VALUES ${subPlaceholders}`,
+                        subValues
                     );
                 }
             }
