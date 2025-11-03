@@ -62,6 +62,10 @@ async function getGeneralStats(req, res) {
 
         const [participationResult] = await pool.execute(participationQuery, participationParams);
 
+        const participationRate = participationResult && participationResult[0] && participationResult[0].participation_rate 
+            ? participationResult[0].participation_rate 
+            : 0;
+
         // Calcul des tendances (pour la période spécifiée)
         const days = parseInt(period) || 30;
 
@@ -120,7 +124,7 @@ async function getGeneralStats(req, res) {
                 active: electionsResult[0].active_elections,
                 percent: 0
             },
-            participationRate: participationResult[0].participation_rate
+            participationRate: participationRate
         });
 
     } catch (error) {

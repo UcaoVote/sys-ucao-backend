@@ -86,12 +86,12 @@ async function getAdminNotifications(req, res) {
     LEFT JOIN users u ON al.userId = u.id
     WHERE al.actionType = 'ADMIN'
     ORDER BY al.createdAt DESC
-    LIMIT ${Math.max(0, parseInt(limit))}`;
+    LIMIT ?`;
 
         console.log('Notification Query:', query);
         console.log('Limit value:', limit);
 
-        const [rows] = await pool.execute(query, [parseInt(limit)]);
+        const [rows] = await pool.execute(query, [limit]);
 
         res.json(rows);
     } catch (error) {
@@ -118,7 +118,7 @@ async function getUserNotifications(req, res) {
             limit = 10;
         }
 
-        const query = `
+        let query = `
             SELECT 
                 id, 
                 title, 
@@ -131,12 +131,18 @@ async function getUserNotifications(req, res) {
                 createdAt, 
                 updatedAt
             FROM notifications 
-            WHERE userId = ? ${unreadOnly === 'true' ? 'AND is_read = FALSE' : ''}
-            ORDER BY createdAt DESC 
-            LIMIT ${Math.max(0, parseInt(limit))}
-        `;
+            WHERE userId = ?`;
+        
+        const params = [userId];
+        
+        if (unreadOnly === 'true') {
+            query += ' AND is_read = FALSE';
+        }
+        
+        query += ' ORDER BY createdAt DESC LIMIT ?';
+        params.push(limit);
 
-        const [notifications] = await pool.execute(query, [userId]);
+        const [notifications] = await pool.execute(query, params);
 
 
         return res.json({

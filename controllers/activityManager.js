@@ -84,13 +84,15 @@ async function getActivityLogs(req, res) {
         const [logs] = await pool.execute(query, values);
         const [countResult] = await pool.execute(countQuery, countValues);
 
+        const total = countResult && countResult[0] ? countResult[0].total : 0;
+
         res.json({
             logs,
             pagination: {
                 page,
                 limit: finalLimit,
-                total: countResult[0].total,
-                pages: Math.ceil(countResult[0].total / finalLimit)
+                total: total,
+                pages: Math.ceil(total / finalLimit)
             }
         });
     } catch (error) {
