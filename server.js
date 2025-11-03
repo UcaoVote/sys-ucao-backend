@@ -57,7 +57,6 @@ app.use((req, res, next) => {
 
 // 🔗 CORS - Configuration élargie pour production
 const allowedOrigins = [
-    //'https://sys-voteucao-frontend-64pi.vercel.app',
     'https://oeuvreuniversitaire.ucaobenin.org'
 ];
 
