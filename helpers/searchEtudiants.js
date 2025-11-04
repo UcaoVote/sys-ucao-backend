@@ -12,10 +12,14 @@ export async function searchEtudiantsByKeyword(keyword) {
 
     const [rows] = await pool.execute(`
         SELECT 
-            e.id, e.nom, e.prenom, e.matricule, e.filiere, e.annee, e.ecole,
-            u.email, u.actif
+            e.id, e.nom, e.prenom, e.matricule, e.annee, 
+            e.ecoleId, e.filiereId, e.photoUrl, e.whatsapp,
+            u.email, u.actif,
+            ec.nom as ecole, f.nom as filiere
         FROM etudiants e
-        INNER JOIN users u ON e.userId = u.id
+        LEFT JOIN users u ON e.userId = u.id
+        LEFT JOIN ecoles ec ON e.ecoleId = ec.id
+        LEFT JOIN filieres f ON e.filiereId = f.id
         WHERE 
             e.nom LIKE ? OR 
             e.prenom LIKE ? OR 

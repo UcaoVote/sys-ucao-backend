@@ -17,11 +17,10 @@ router.get('/', authenticateToken, async (req, res) => {
         // Plus besoin d'import dynamique avec le Proxy dans dbconfig.js
         const [students] = await pool.execute(`
             SELECT 
-                id, matricule, nom, prenom, email, telephone, genre, 
-                dateNaissance, lieuNaissance, adresse, nationalite, 
-                filiereId, ecoleId, annee, statut, createdAt
+                id, userId, matricule, identifiantTemporaire, nom, prenom, 
+                annee, photoUrl, ecoleId, filiereId, whatsapp, additional_info
             FROM etudiants
-            ORDER BY createdAt DESC
+            ORDER BY id DESC
         `);
 
         const paginated = paginateResults(students, page, limit);
