@@ -20,8 +20,8 @@ router.get('/', authenticateToken, async (req, res) => {
                 e.id, e.userId, e.matricule, e.identifiantTemporaire, 
                 e.nom, e.prenom, e.annee, e.photoUrl, 
                 e.ecoleId, e.filiereId, e.whatsapp, e.additional_info,
-                ec.nom as ecole_nom,
-                f.nom as filiere_nom,
+                ec.nom as nomEcole,
+                f.nom as nomFiliere,
                 u.email, u.actif, u.tempPassword
             FROM etudiants e
             LEFT JOIN users u ON e.userId = u.id
