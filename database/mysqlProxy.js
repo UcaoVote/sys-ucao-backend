@@ -81,9 +81,12 @@ class MySQLProxy {
             }
 
             console.log('🔍 mysqlProxy.execute() - Query:', query.substring(0, 100));
+            console.log('🔍 mysqlProxy.execute() - Payload:', JSON.stringify(payload).substring(0, 200));
             const response = await this.client.post('', payload);
             console.log('📡 mysqlProxy.execute() - Response success:', response.data.success);
-            console.log('📊 mysqlProxy.execute() - Data length:', response.data.data?.length);
+            console.log('� mysqlProxy.execute() - Full response.data keys:', Object.keys(response.data));
+            console.log('📊 mysqlProxy.execute() - response.data.data type:', typeof response.data.data);
+            console.log('📊 mysqlProxy.execute() - response.data.data value:', JSON.stringify(response.data.data).substring(0, 500));
 
             if (!response.data.success) {
                 throw new Error(response.data.error);
@@ -97,7 +100,6 @@ class MySQLProxy {
                 // Pour SELECT : retourner [rows, fields]
                 const rows = response.data.data || [];
                 console.log('✅ mysqlProxy.execute() - Returning', rows.length, 'rows');
-                console.log('🔍 DEBUG - response.data:', JSON.stringify(response.data).substring(0, 500));
                 return [rows, []];
             } else {
                 // Pour INSERT/UPDATE/DELETE : retourner [ResultSetHeader, fields]
