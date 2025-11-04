@@ -93,68 +93,16 @@ async function getElectionsForStudent(filiereId, annee, ecoleId) {
 async function getAllElections() {
     try {
         console.log('🔍 getAllElections - Début requête');
-        
-        // Requête simplifiée sans sous-requêtes (fix pour proxy)
-        const connection = await pool.getConnection();
-        const [rows] = await connection.query(`
+
+        // Utiliser pool.execute() comme dans getAllEcoles qui fonctionne
+        const [rows] = await pool.execute(`
             SELECT 
-                e.id,
-                e.type,
-                e.titre,
-                e.description,
-                e.dateDebut,
-                e.dateFin,
-                e.dateDebutCandidature,
-                e.dateFinCandidature,
-                e.filiereId,
-                e.annee,
-                e.ecoleId,
-                e.niveau,
-                e.delegueType,
-                e.isActive,
-                e.createdAt
+                e.*
             FROM elections e
             ORDER BY e.createdAt DESC
         `);
-        
-        // Enrichir avec les noms et comptages séparément
-        for (let election of rows) {
-            // Récupérer nom filière
-            if (election.filiereId) {
-                const [filiereRows] = await connection.query(
-                    'SELECT nom FROM filieres WHERE id = ?', 
-                    [election.filiereId]
-                );
-                election.nomFiliere = filiereRows[0]?.nom || null;
-            }
-            
-            // Récupérer nom école
-            if (election.ecoleId) {
-                const [ecoleRows] = await connection.query(
-                    'SELECT nom FROM ecoles WHERE id = ?', 
-                    [election.ecoleId]
-                );
-                election.nomEcole = ecoleRows[0]?.nom || null;
-            }
-            
-            // Compter candidats
-            const [candidatsRows] = await connection.query(
-                'SELECT COUNT(*) as count FROM candidates WHERE electionId = ? AND statut = ?',
-                [election.id, 'APPROUVE']
-            );
-            election.nb_candidats = candidatsRows[0].count;
-            
-            // Compter votes
-            const [votesRows] = await connection.query(
-                'SELECT COUNT(*) as count FROM votes WHERE electionId = ?',
-                [election.id]
-            );
-            election.nb_votes = votesRows[0].count;
-        }
-        
-        connection.release();
 
-        console.log(`✅ getAllElections - ${rows.length} élections trouvées`);
+        console.log(`✅ getAllElections - ${rows.length} élections trouvées (brutes)`);
         return rows;
     } catch (error) {
         console.error('Erreur lors de la récupération des élections:', error);
