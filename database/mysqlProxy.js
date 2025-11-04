@@ -80,7 +80,10 @@ class MySQLProxy {
                 payload.params = params;
             }
 
+            console.log('🔍 mysqlProxy.execute() - Query:', query.substring(0, 100));
             const response = await this.client.post('', payload);
+            console.log('📡 mysqlProxy.execute() - Response success:', response.data.success);
+            console.log('📊 mysqlProxy.execute() - Data length:', response.data.data?.length);
 
             if (!response.data.success) {
                 throw new Error(response.data.error);
@@ -93,6 +96,7 @@ class MySQLProxy {
             if (isSelect) {
                 // Pour SELECT : retourner [rows, fields]
                 const rows = response.data.data || [];
+                console.log('✅ mysqlProxy.execute() - Returning', rows.length, 'rows');
                 return [rows, []];
             } else {
                 // Pour INSERT/UPDATE/DELETE : retourner [ResultSetHeader, fields]
