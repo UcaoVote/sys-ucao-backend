@@ -97,6 +97,7 @@ class MySQLProxy {
                 // Pour SELECT : retourner [rows, fields]
                 const rows = response.data.data || [];
                 console.log('✅ mysqlProxy.execute() - Returning', rows.length, 'rows');
+                console.log('🔍 DEBUG - response.data:', JSON.stringify(response.data).substring(0, 500));
                 return [rows, []];
             } else {
                 // Pour INSERT/UPDATE/DELETE : retourner [ResultSetHeader, fields]
