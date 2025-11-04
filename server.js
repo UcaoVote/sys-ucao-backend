@@ -150,31 +150,31 @@ app.get('/api/debug/config', async (req, res) => {
     try {
         // Test de connexion DB
         const connection = await pool.getConnection();
-        
+
         let studentsCount = 0, electionsCount = 0, sampleElection = null;
         let errors = [];
-        
+
         try {
             const [countResult] = await connection.query('SELECT COUNT(*) as total FROM etudiants');
             studentsCount = countResult[0].total;
         } catch (e) {
             errors.push(`students: ${e.message}`);
         }
-        
+
         try {
             const [electionsCountResult] = await connection.query('SELECT COUNT(*) as total FROM elections');
             electionsCount = electionsCountResult[0].total;
         } catch (e) {
             errors.push(`elections count: ${e.message}`);
         }
-        
+
         try {
             const [electionsTest] = await connection.query('SELECT id, titre, type FROM elections LIMIT 1');
             sampleElection = electionsTest[0] || null;
         } catch (e) {
             errors.push(`elections sample: ${e.message}`);
         }
-        
+
         connection.release();
 
         res.json({

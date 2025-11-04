@@ -14,11 +14,10 @@ router.get('/', authenticateToken, async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const limit = 50;
 
-        // Import dynamique pour garantir la bonne instance de pool
-        const pool = (await import('../database/dbconfig.js')).default;
+        // Plus besoin d'import dynamique avec le Proxy dans dbconfig.js
         const [students] = await pool.execute(`
             SELECT 
-                id, matricule, nom, prenoms, email, telephone, genre, 
+                id, matricule, nom, prenom, email, telephone, genre, 
                 dateNaissance, lieuNaissance, adresse, nationalite, 
                 filiereId, ecoleId, annee, statut, createdAt
             FROM etudiants
