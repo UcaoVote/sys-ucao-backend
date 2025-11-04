@@ -14,9 +14,18 @@ router.get('/', authenticateToken, async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const limit = 50;
 
-        const students = await studentManager.getAllStudents();
-        const paginated = paginateResults(students, page, limit);
+        // Import dynamique pour garantir la bonne instance de pool
+        const pool = (await import('../database/dbconfig.js')).default;
+        const [students] = await pool.execute(`
+            SELECT 
+                id, matricule, nom, prenoms, email, telephone, genre, 
+                dateNaissance, lieuNaissance, adresse, nationalite, 
+                filiereId, ecoleId, annee, statut, createdAt
+            FROM etudiants
+            ORDER BY createdAt DESC
+        `);
 
+        const paginated = paginateResults(students, page, limit);
         res.json(paginated);
     } catch (error) {
         res.status(500).json({ error: error.message });

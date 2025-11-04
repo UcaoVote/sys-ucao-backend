@@ -48,7 +48,9 @@ router.get('/test-direct', async (req, res) => {
 // Recuperer  toues les elections
 router.get('/', async (req, res) => {
     try {
-        const elections = await electionManager.getAllElections();
+        // Import dynamique pour garantir la bonne instance de pool
+        const pool = (await import('../database/dbconfig.js')).default;
+        const [elections] = await pool.execute('SELECT * FROM elections ORDER BY createdAt DESC');
         res.status(200).json({ data: elections });
     } catch (error) {
         console.error('Erreur dans getAllElections :', error.message);
