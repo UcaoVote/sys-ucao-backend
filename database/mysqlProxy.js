@@ -74,13 +74,17 @@ class MySQLProxy {
      */
     async execute(query, params = []) {
         try {
+            // 🔧 NORMALISER la requête : supprimer les espaces/sauts de ligne au début
+            // car le proxy PHP vérifie /^SELECT/i qui échoue si la requête commence par des espaces
+            const normalizedQuery = query.trim().replace(/\s+/g, ' ');
+            
             // Ne pas envoyer params s'il est vide (évite l'erreur HY093 côté PHP)
-            const payload = { query };
+            const payload = { query: normalizedQuery };
             if (params && params.length > 0) {
                 payload.params = params;
             }
 
-            console.log('🔍 mysqlProxy.execute() - Query:', query.substring(0, 100));
+            console.log('🔍 mysqlProxy.execute() - Query:', normalizedQuery.substring(0, 100));
             console.log('🔍 mysqlProxy.execute() - Payload:', JSON.stringify(payload).substring(0, 200));
             const response = await this.client.post('', payload);
             console.log('📡 mysqlProxy.execute() - Response success:', response.data.success);
@@ -97,8 +101,15 @@ class MySQLProxy {
             const isSelect = queryType === 'SELECT' || queryType === 'SHOW' || queryType === 'DESCRIBE';
 
             if (isSelect) {
-                // Pour SELECT : retourner [rows, fields]
-                const rows = response.data.data || [];
+                // 🔧 FIX: Le proxy PHP retourne parfois "affectedRows" au lieu de "data" pour les SELECT
+                // Si on a "affectedRows" mais pas "data", il faut refaire la requête avec query() au lieu d'execute()
+                let rows = response.data.data || [];
+                
+                if (!response.data.data && response.data.affectedRows !== undefined) {
+                    console.warn('⚠️ Proxy returned affectedRows instead of data for SELECT - using query() method instead');
+                    return await this.query(query, params);
+                }
+                
                 console.log('✅ mysqlProxy.execute() - Returning', rows.length, 'rows');
                 return [rows, []];
             } else {
