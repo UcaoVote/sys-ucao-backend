@@ -50,4 +50,17 @@ export async function testConnection() {
     }
 }
 
-export default pool;
+// Export d'un wrapper qui garantit l'utilisation de la bonne instance
+const poolWrapper = {
+    execute: async (...args) => {
+        return await pool.execute(...args);
+    },
+    query: async (...args) => {
+        return await pool.query(...args);
+    },
+    getConnection: async () => {
+        return await pool.getConnection();
+    }
+};
+
+export default poolWrapper;
