@@ -12,6 +12,7 @@ import rateLimit from 'express-rate-limit';
 import importRouter from './routes/import.js';
 import activityStudentsRouter from './routes/activityStudents.js';
 import uploadRouter from './routes/upload.js';
+import uploadLocalRouter from './routes/uploadLocal.js'; // NOUVEAU: Upload local
 import matriculesRouter from './routes/import.js';
 import userLoginRouter from './routes/userLogin.js';
 import userRegisterRouter from './routes/userRegister.js';
@@ -117,7 +118,8 @@ app.use('/api/import', importRouter);
 app.use('/api/activities', activityStudentsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/matricules', matriculesRouter);
-app.use('/api/upload', uploadRouter);
+app.use('/api/upload', uploadRouter); // Ancien système (ImgBB)
+app.use('/api/upload-local', uploadLocalRouter); // NOUVEAU: Système local
 app.use('/api/adminAuth', adminAuthRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/userLogin', userLoginRouter);
