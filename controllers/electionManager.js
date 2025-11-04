@@ -93,6 +93,11 @@ async function getElectionsForStudent(filiereId, annee, ecoleId) {
 async function getAllElections() {
     try {
         console.log('🔍 getAllElections - Début requête');
+        
+        // Test simple d'abord
+        const [testRows] = await pool.execute('SELECT COUNT(*) as total FROM elections');
+        console.log(`🔍 Test COUNT: ${testRows[0].total} élections dans la table`);
+        
         const [rows] = await pool.execute(`
             SELECT 
                 e.id,
@@ -104,23 +109,18 @@ async function getAllElections() {
                 e.dateDebutCandidature,
                 e.dateFinCandidature,
                 e.filiereId,
-                f.nom AS nomFiliere,
                 e.annee,
                 e.ecoleId,
-                ec.nom AS nomEcole,
                 e.niveau,
                 e.delegueType,
                 e.isActive,
-                e.createdAt,
-                (SELECT COUNT(*) FROM candidates c WHERE c.electionId = e.id AND c.statut = 'APPROUVE') AS nb_candidats,
-                (SELECT COUNT(*) FROM votes v WHERE v.electionId = e.id) AS nb_votes
+                e.createdAt
             FROM elections e
-            LEFT JOIN filieres f ON f.id = e.filiereId
-            LEFT JOIN ecoles ec ON ec.id = e.ecoleId
             ORDER BY e.createdAt DESC
         `);
 
-        console.log(`✅ getAllElections - ${rows.length} élections trouvées`);
+        console.log(`✅ getAllElections - ${rows.length} élections trouvées après SELECT`);
+        console.log('📊 Première élection:', rows[0]);
         return rows;
     } catch (error) {
         console.error('Erreur lors de la récupération des élections:', error);
