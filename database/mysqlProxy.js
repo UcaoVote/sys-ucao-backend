@@ -88,9 +88,12 @@ class MySQLProxy {
             console.log('🔍 mysqlProxy.execute() - Payload:', JSON.stringify(payload).substring(0, 200));
             const response = await this.client.post('', payload);
             console.log('📡 mysqlProxy.execute() - Response success:', response.data.success);
-            console.log('� mysqlProxy.execute() - Full response.data keys:', Object.keys(response.data));
+            console.log('📦 mysqlProxy.execute() - Full response.data keys:', Object.keys(response.data));
             console.log('📊 mysqlProxy.execute() - response.data.data type:', typeof response.data.data);
-            console.log('📊 mysqlProxy.execute() - response.data.data value:', JSON.stringify(response.data.data).substring(0, 500));
+
+            // FIX: Vérifier si data existe avant de faire substring
+            const dataValue = response.data.data !== undefined ? JSON.stringify(response.data.data) : 'undefined';
+            console.log('📊 mysqlProxy.execute() - response.data.data value:', dataValue.substring(0, 500));
 
             if (!response.data.success) {
                 throw new Error(response.data.error);
