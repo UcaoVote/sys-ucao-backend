@@ -92,6 +92,7 @@ async function getElectionsForStudent(filiereId, annee, ecoleId) {
 
 async function getAllElections() {
     try {
+        console.log('🔍 getAllElections - Début requête');
         const [rows] = await pool.execute(`
             SELECT 
                 e.id,
@@ -119,6 +120,7 @@ async function getAllElections() {
             ORDER BY e.createdAt DESC
         `);
 
+        console.log(`✅ getAllElections - ${rows.length} élections trouvées`);
         return rows;
     } catch (error) {
         console.error('Erreur lors de la récupération des élections:', error);
