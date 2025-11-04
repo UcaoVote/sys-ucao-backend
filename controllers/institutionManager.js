@@ -180,19 +180,33 @@ export const toggleFiliereActif = async (req, res) => {
 // Lister toutes les filières
 //
 export const getAllFilieres = async (req, res) => {
-    const { actif } = req.query;
+    const { actif, ecoleId } = req.query;
     let query = 'SELECT * FROM filieres';
     const params = [];
+    const conditions = [];
 
+    // Filtre par école si ecoleId est fourni
+    if (ecoleId !== undefined) {
+        conditions.push('ecoleId = ?');
+        params.push(ecoleId);
+    }
+
+    // Filtre par statut actif si fourni
     if (actif !== undefined) {
-        query += ' WHERE actif = ?';
+        conditions.push('actif = ?');
         params.push(actif === 'true' ? 1 : 0);
+    }
+
+    // Ajouter les conditions WHERE si nécessaire
+    if (conditions.length > 0) {
+        query += ' WHERE ' + conditions.join(' AND ');
     }
 
     try {
         const [rows] = await pool.execute(query, params);
         res.json(rows);
     } catch (err) {
+        console.error('Erreur getAllFilieres:', err);
         res.status(500).json({ error: 'Erreur serveur' });
     }
 };
