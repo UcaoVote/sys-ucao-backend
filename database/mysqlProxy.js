@@ -1,12 +1,18 @@
 import axios from 'axios';
+import dotenv from 'dotenv';
+dotenv.config();
 
 /**
  * 🔄 Client MySQL Proxy
  * Utilise l'API PHP pour communiquer avec MySQL
  */
 
-const PROXY_URL = 'https://oeuvreuniversitaire.ucaobenin.org/api/db-proxy.php';
-const PROXY_SECRET = '9n0YQwolDxipCm6MtgG8zBJRHcSdXyhkebFN37Vs';
+const PROXY_URL = process.env.MYSQL_PROXY_URL || 'https://oeuvreuniversitaire.ucaobenin.org/api/db-proxy.php';
+const PROXY_SECRET = process.env.PROXY_SECRET || '9n0YQwolDxipCm6MtgG8zBJRHcSdXyhkebFN37Vs';
+
+console.log('🔧 MySQL Proxy Config:');
+console.log('  URL:', PROXY_URL);
+console.log('  SECRET:', PROXY_SECRET ? 'SET (***' + PROXY_SECRET.slice(-4) + ')' : 'NOT SET');
 
 class MySQLProxy {
     constructor() {
