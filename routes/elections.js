@@ -48,10 +48,13 @@ router.get('/test-direct', async (req, res) => {
 // Recuperer  toues les elections
 router.get('/', async (req, res) => {
     try {
-        const elections = await electionManager.getAllElections();
+        // FIX TEMPORAIRE: Utiliser la même méthode que getAllEcoles qui fonctionne
+        const pool = (await import('../database/dbconfig.js')).default;
+        const [elections] = await pool.execute('SELECT * FROM elections ORDER BY createdAt DESC');
+        console.log(`✅ Route / - ${elections.length} élections récupérées`);
         res.status(200).json({ data: elections });
     } catch (error) {
-        console.error('Erreur dans getAllElections :', error.message);
+        console.error('❌ Erreur dans route / :', error.message, error.stack);
         res.status(500).json({ error: 'Erreur interne lors de la récupération des élections.' });
     }
 });
