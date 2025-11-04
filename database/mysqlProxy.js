@@ -77,7 +77,7 @@ class MySQLProxy {
             // 🔧 NORMALISER la requête : supprimer les espaces/sauts de ligne au début
             // car le proxy PHP vérifie /^SELECT/i qui échoue si la requête commence par des espaces
             const normalizedQuery = query.trim().replace(/\s+/g, ' ');
-            
+
             // Ne pas envoyer params s'il est vide (évite l'erreur HY093 côté PHP)
             const payload = { query: normalizedQuery };
             if (params && params.length > 0) {
@@ -104,12 +104,12 @@ class MySQLProxy {
                 // 🔧 FIX: Le proxy PHP retourne parfois "affectedRows" au lieu de "data" pour les SELECT
                 // Si on a "affectedRows" mais pas "data", il faut refaire la requête avec query() au lieu d'execute()
                 let rows = response.data.data || [];
-                
+
                 if (!response.data.data && response.data.affectedRows !== undefined) {
                     console.warn('⚠️ Proxy returned affectedRows instead of data for SELECT - using query() method instead');
                     return await this.query(query, params);
                 }
-                
+
                 console.log('✅ mysqlProxy.execute() - Returning', rows.length, 'rows');
                 return [rows, []];
             } else {

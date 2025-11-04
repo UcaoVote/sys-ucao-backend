@@ -24,7 +24,15 @@ router.get('/', authenticateToken, async (req, res) => {
         `);
 
         const paginated = paginateResults(students, page, limit);
-        res.json(paginated);
+        // Retourner au format attendu par le frontend: { data: [...] }
+        res.json({
+            success: true,
+            total: paginated.total,
+            page: paginated.page,
+            limit: paginated.limit,
+            pages: paginated.pages,
+            data: paginated.results
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
