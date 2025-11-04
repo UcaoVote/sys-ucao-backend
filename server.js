@@ -151,6 +151,8 @@ app.get('/api/debug/config', async (req, res) => {
         // Test de connexion DB
         const connection = await pool.getConnection();
         const [countResult] = await connection.query('SELECT COUNT(*) as total FROM etudiants');
+        const [electionsCount] = await connection.query('SELECT COUNT(*) as total FROM elections');
+        const [electionsTest] = await connection.query('SELECT id, titre, type FROM elections LIMIT 1');
         connection.release();
 
         res.json({
@@ -167,6 +169,8 @@ app.get('/api/debug/config', async (req, res) => {
             database: {
                 connected: true,
                 studentsCount: countResult[0].total,
+                electionsCount: electionsCount[0].total,
+                sampleElection: electionsTest[0] || null,
                 poolType: pool.constructor.name || 'unknown'
             }
         });
