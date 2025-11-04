@@ -145,6 +145,46 @@ app.get('/api/test', (_req, res) => {
     });
 });
 
+// 🔍 Route de diagnostic config
+app.get('/api/debug/config', async (req, res) => {
+    try {
+        // Test de connexion DB
+        const connection = await pool.getConnection();
+        const [countResult] = await connection.query('SELECT COUNT(*) as total FROM etudiants');
+        connection.release();
+
+        res.json({
+            status: 'OK',
+            timestamp: new Date().toISOString(),
+            config: {
+                USE_MYSQL_PROXY: process.env.USE_MYSQL_PROXY || 'not set',
+                MYSQL_PROXY_URL: process.env.MYSQL_PROXY_URL ? 'SET' : 'NOT SET',
+                PROXY_SECRET: process.env.PROXY_SECRET ? 'SET (hidden)' : 'NOT SET',
+                DB_HOST: process.env.DB_HOST ? 'SET' : 'NOT SET',
+                DB_NAME: process.env.DB_NAME ? 'SET' : 'NOT SET',
+                NODE_ENV: process.env.NODE_ENV || 'development'
+            },
+            database: {
+                connected: true,
+                studentsCount: countResult[0].total,
+                poolType: pool.constructor.name || 'unknown'
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'ERROR',
+            timestamp: new Date().toISOString(),
+            config: {
+                USE_MYSQL_PROXY: process.env.USE_MYSQL_PROXY || 'not set',
+                MYSQL_PROXY_URL: process.env.MYSQL_PROXY_URL ? 'SET' : 'NOT SET',
+                PROXY_SECRET: process.env.PROXY_SECRET ? 'SET (hidden)' : 'NOT SET'
+            },
+            error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+});
+
 // Gestion d’erreurs
 app.use((err, req, res, next) => {
     console.error('Erreur serveur:', err);
