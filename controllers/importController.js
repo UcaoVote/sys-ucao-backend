@@ -2,11 +2,16 @@ import { importService } from '../services/importService.js';
 
 export const importController = {
     async importEtudiants(req, res) {
+        // Augmenter le timeout pour cette route
+        req.setTimeout(300000); // 5 minutes
+        res.setTimeout(300000);
+
         try {
-            const { etudiants, updateExisting = false } = req.body; // Nouveau paramètre
+            const { etudiants, updateExisting = false } = req.body;
 
             if (!etudiants || !Array.isArray(etudiants) || etudiants.length === 0) {
                 return res.status(400).json({
+                    success: false,
                     message: 'Liste d\'étudiants invalide.'
                 });
             }
@@ -15,6 +20,7 @@ export const importController = {
             const isAdmin = await importService.verifyAdmin(req.user.id);
             if (!isAdmin) {
                 return res.status(403).json({
+                    success: false,
                     message: 'Accès refusé. Admin requis.'
                 });
             }
@@ -24,46 +30,53 @@ export const importController = {
 
             if (etudiantsValides.erreurs.length > 0) {
                 return res.status(400).json({
+                    success: false,
                     message: 'Erreurs de validation',
                     erreurs: etudiantsValides.erreurs,
                     etudiantsValides: etudiantsValides.donnees
                 });
             }
 
-            // Vérifier les doublons (mais ne pas bloquer si updateExisting = true)
+            // Vérifier les doublons
             const doublons = await importService.verifierDoublons(etudiantsValides.donnees);
 
             if (doublons.length > 0 && !updateExisting) {
                 return res.status(400).json({
+                    success: false,
                     message: 'Doublons détectés',
                     doublons: doublons,
                     suggestion: 'Utilisez updateExisting=true pour mettre à jour les étudiants existants'
                 });
             }
 
-            // Importer les étudiants avec l'option de mise à jour
+            // Importer les étudiants
             const resultat = await importService.importerEtudiants(
                 etudiantsValides.donnees,
                 updateExisting
             );
 
             return res.status(201).json({
+                success: true,
                 message: updateExisting ?
                     'Importation/Mise à jour terminée avec succès.' :
                     'Importation terminée avec succès.',
-                importes: resultat.importes,
-                misAJour: resultat.misAJour || [], // Nouveau champ
-                echecs: resultat.echecs,
-                doublonsTrouves: doublons.length,
-                total: etudiants.length,
-                reussis: resultat.importes.length + (resultat.misAJour?.length || 0),
-                echoues: resultat.echecs.length
+                data: {
+                    importes: resultat.importes,
+                    misAJour: resultat.misAJour || [],
+                    echecs: resultat.echecs,
+                    doublonsTrouves: doublons.length,
+                    total: etudiants.length,
+                    reussis: resultat.importes.length + (resultat.misAJour?.length || 0),
+                    echoues: resultat.echecs.length
+                }
             });
 
         } catch (err) {
             console.error('Erreur import étudiants:', err);
             return res.status(500).json({
-                message: 'Erreur serveur lors de l\'importation.'
+                success: false,
+                message: 'Erreur serveur lors de l\'importation.',
+                error: err.message
             });
         }
     }

@@ -152,39 +152,44 @@ export const importService = {
         const importes = [];
         const misAJour = [];
         const echecs = [];
+        const BATCH_SIZE = 50;
 
         try {
             connection = await pool.getConnection();
-            await connection.beginTransaction();
 
-            for (const etudiant of etudiants) {
-                try {
-                    // 1. Vérifier si l'étudiant existe déjà
-                    const etudiantExistant = await this.trouverEtudiantExistant(connection, etudiant);
+            // Traiter par lots de 50
+            for (let i = 0; i < etudiants.length; i += BATCH_SIZE) {
+                const batch = etudiants.slice(i, i + BATCH_SIZE);
+                
+                await connection.beginTransaction();
 
-                    if (etudiantExistant) {
-                        if (updateExisting) {
-                            // METTRE À JOUR l'étudiant existant
-                            const etudiantMAJ = await this.mettreAJourEtudiant(connection, etudiantExistant, etudiant);
-                            misAJour.push(etudiantMAJ);
+                for (const etudiant of batch) {
+                    try {
+                        const etudiantExistant = await this.trouverEtudiantExistant(connection, etudiant);
+
+                        if (etudiantExistant) {
+                            if (updateExisting) {
+                                const etudiantMAJ = await this.mettreAJourEtudiant(connection, etudiantExistant, etudiant);
+                                misAJour.push(etudiantMAJ);
+                            } else {
+                                throw new Error('Étudiant déjà existant');
+                            }
                         } else {
-                            throw new Error('Étudiant déjà existant');
+                            const nouvelEtudiant = await this.creerNouvelEtudiant(connection, etudiant);
+                            importes.push(nouvelEtudiant);
                         }
-                    } else {
-                        // CRÉER un nouvel étudiant
-                        const nouvelEtudiant = await this.creerNouvelEtudiant(connection, etudiant);
-                        importes.push(nouvelEtudiant);
-                    }
 
-                } catch (error) {
-                    echecs.push({
-                        etudiant: etudiant,
-                        erreur: error.message
-                    });
+                    } catch (error) {
+                        echecs.push({
+                            etudiant: etudiant,
+                            erreur: error.message
+                        });
+                    }
                 }
+
+                await connection.commit();
             }
 
-            await connection.commit();
             return { importes, misAJour, echecs };
 
         } catch (error) {
