@@ -103,10 +103,19 @@ router.get('/filter', authenticateToken, async (req, res) => {
     const { filiere, annee, ecole } = req.query;
 
     try {
-        const students = await studentManager.getFilteredStudents({ filiere, annee, ecole });
+        console.log('🔍 Filtrage demandé:', { filiere, annee, ecole });
+
+        // Mapper les noms de paramètres attendus par le controller
+        const students = await studentManager.getFilteredStudents({
+            filiereId: filiere,
+            annee: annee,
+            ecoleId: ecole
+        });
+
+        console.log('✅ Résultats filtrage:', students.length, 'étudiants trouvés');
         res.status(200).json({ data: students });
     } catch (error) {
-        console.error('Erreur SQL:', error.message);
+        console.error('❌ Erreur SQL:', error.message);
         res.status(500).json({ error: 'Erreur interne lors du filtrage des étudiants.' });
     }
 });
