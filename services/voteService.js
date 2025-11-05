@@ -41,9 +41,18 @@ class VoteService {
 
             const etudiant = userRows[0];
 
-            // Vérifier l'éligibilité
+            // Vérifier l'éligibilité de base
             if (!this.isEligibleForElection(etudiant, election)) {
                 throw new Error('Vous n\'êtes pas éligible pour cette élection');
+            }
+
+            // Vérification spéciale pour UNIVERSITE Tour 2
+            // Seuls les candidats du Tour 1 peuvent voter
+            if (election.type === 'UNIVERSITE' && election.tour === 2) {
+                const isCandidate = await this.isCandidateFromTour1(connection, userId, election);
+                if (!isCandidate) {
+                    throw new Error('Seuls les candidats du Tour 1 peuvent voter au Tour 2');
+                }
             }
 
             // Vérifier si l'utilisateur a déjà voté
@@ -210,48 +219,22 @@ class VoteService {
         }
     }
 
+    /**
+     * Calculer le poids d'un vote en fonction du type d'élection et du statut de l'utilisateur
+     * NOUVELLE LOGIQUE:
+     * - SALLE: 1.0 pour tous (pas de pondération)
+     * - ECOLE: 1.0 pour tous (calcul groupé 80/20 dans calculateSchoolElectionResults)
+     * - UNIVERSITE: 1.0 pour tous (calcul groupé 80/20 dans calculateUniversityElectionResults)
+     * 
+     * Note: Le poids individuel est toujours 1.0, la pondération se fait au niveau des groupes
+     * lors du calcul des résultats.
+     */
     async calculateVoteWeight(connection, userId, election) {
         try {
-            const filiereId = election.filiereId ?? null;
-            const annee = election.annee ?? null;
-            const ecoleId = election.ecoleId ?? null;
-
-            console.log('📊 Paramètres pour calcul du poids du vote :', {
-                userId,
-                type: election.type,
-                filiereId,
-                annee,
-                ecoleId
-            });
-
-            if (election.type === 'ECOLE') {
-                const [responsableRows] = await connection.execute(`
-                    SELECT rs.* 
-                    FROM responsables_salle rs
-                    INNER JOIN etudiants e ON rs.etudiantId = e.id
-                    WHERE e.userId = ? 
-                    AND rs.ecoleId = ?
-                `, [userId, ecoleId]);
-
-                return responsableRows.length > 0 ? 1.5 : 1.0;
-            } else {
-                const [responsableRows] = await connection.execute(`
-                    SELECT rs.* 
-                    FROM responsables_salle rs
-                    INNER JOIN etudiants e ON rs.etudiantId = e.id
-                    WHERE e.userId = ? 
-                    AND (? IS NULL OR rs.filiereId = ?)
-                    AND (? IS NULL OR rs.annee = ?)
-                    AND (? IS NULL OR rs.ecoleId = ?)
-                `, [
-                    userId,
-                    filiereId, filiereId,
-                    annee, annee,
-                    ecoleId, ecoleId
-                ]);
-
-                return responsableRows.length > 0 ? 1.6 : 1.0;
-            }
+            // Tous les votes individuels ont maintenant un poids de 1.0
+            // La pondération se fait au niveau des groupes (responsables/étudiants ou délégués/autres)
+            // lors du calcul des résultats
+            return 1.0;
 
         } catch (error) {
             console.error('❌ Erreur calcul poids vote:', error.message);
@@ -275,12 +258,17 @@ class VoteService {
 
             const election = electionRows[0];
 
-            // Pour les élections d'école, utiliser le calcul spécial 60/40
+            // Pour les élections d'école, utiliser le calcul spécial 80/20
             if (election.type === 'ECOLE') {
                 return await this.calculateSchoolElectionResults(connection, election);
             }
 
-            // Pour les autres types d'élection, utiliser le calcul normal
+            // Pour les élections d'université, utiliser le calcul 80/20 délégués/autres
+            if (election.type === 'UNIVERSITE') {
+                return await this.calculateUniversityElectionResults(connection, election);
+            }
+
+            // Pour les élections de salle, utiliser le calcul normal (1.0 pour tous)
             return await this.calculateNormalElectionResults(connection, election);
 
         } catch (error) {
@@ -393,12 +381,13 @@ class VoteService {
         const votesResponsables = voteRows.filter(vote => vote.is_responsable);
         const votesEtudiants = voteRows.filter(vote => !vote.is_responsable);
 
-        // Calcul du total pondéré de l'élection
+        // Compter le total dans chaque groupe
         const totalVotesResponsables = votesResponsables.length;
         const totalVotesEtudiants = votesEtudiants.length;
-        const totalPondere = (totalVotesResponsables * 0.6) + (totalVotesEtudiants * 0.4);
 
-        // Calcul des résultats avec pondération 60/40
+        // Calcul des résultats avec pondération 80/20 sur les POURCENTAGES
+        // Le groupe responsables pèse 80% du résultat final
+        // Le groupe étudiants pèse 20% du résultat final
         const resultats = candidateRows.map(candidate => {
             const votesRespo = votesResponsables.filter(vote => vote.candidateId === candidate.id);
             const votesEtud = votesEtudiants.filter(vote => vote.candidateId === candidate.id);
@@ -406,11 +395,12 @@ class VoteService {
             const nombreVotesRespo = votesRespo.length;
             const nombreVotesEtud = votesEtud.length;
 
-            // Appliquer la pondération 60/40
-            const scorePondere = (nombreVotesRespo * 0.6) + (nombreVotesEtud * 0.4);
-            const pourcentage = totalPondere > 0 ? (scorePondere / totalPondere) * 100 : 0;
+            // Calculer le % dans chaque groupe
+            const pctResponsables = totalVotesResponsables > 0 ? (nombreVotesRespo / totalVotesResponsables) * 100 : 0;
+            const pctEtudiants = totalVotesEtudiants > 0 ? (nombreVotesEtud / totalVotesEtudiants) * 100 : 0;
 
-            return {
+            // Appliquer la pondération 80/20 sur les pourcentages
+            const pourcentage = (pctResponsables * 0.8) + (pctEtudiants * 0.2); return {
                 candidateId: candidate.id,
                 nom: candidate.nom,
                 prenom: candidate.prenom,
@@ -423,10 +413,8 @@ class VoteService {
                     totalVotes: nombreVotesRespo + nombreVotesEtud,
                     votesResponsables: nombreVotesRespo,
                     votesEtudiants: nombreVotesEtud,
-                    scorePondere: parseFloat(scorePondere.toFixed(2)),
-                    poidsMoyen: (nombreVotesRespo + nombreVotesEtud) > 0
-                        ? parseFloat((scorePondere / (nombreVotesRespo + nombreVotesEtud)).toFixed(2))
-                        : 0
+                    pctResponsables: parseFloat(pctResponsables.toFixed(2)),
+                    pctEtudiants: parseFloat(pctEtudiants.toFixed(2))
                 }
             };
         });
@@ -442,15 +430,167 @@ class VoteService {
                 totalVotes: voteRows.length,
                 votesResponsables: totalVotesResponsables,
                 votesEtudiants: totalVotesEtudiants,
-                totalPondere: totalPondere,
                 totalInscrits: totalInscrits,
                 electeursAyantVote: uniqueVoters,
                 tauxParticipation: totalInscrits > 0
                     ? parseFloat(((uniqueVoters / totalInscrits) * 100).toFixed(2))
-                    : 0
+                    : 0,
+                ponderation: '80% du groupe responsables + 20% du groupe étudiants'
             },
             resultats: resultats
         };
+    }
+
+    /**
+     * Calcul des résultats pour les élections UNIVERSITE
+     * - Tour 1: Pondération 80/20 (délégués d'école / autres)
+     * - Tour 2: Transfert de votes des candidats vers leur choix
+     */
+    async calculateUniversityElectionResults(connection, election) {
+        const [candidateRows] = await connection.execute(`
+            SELECT c.*, u.email, e.nom, e.prenom
+            FROM candidates c
+            LEFT JOIN users u ON c.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            WHERE c.electionId = ?
+        `, [election.id]);
+
+        const [voteRows] = await connection.execute(`
+            SELECT 
+                v.*, 
+                u.email,
+                e.nom,
+                e.prenom,
+                CASE WHEN de.id IS NOT NULL THEN TRUE ELSE FALSE END as is_delegue
+            FROM votes v
+            LEFT JOIN users u ON v.userId = u.id
+            LEFT JOIN etudiants e ON u.id = e.userId
+            LEFT JOIN responsables_salle rs ON e.id = rs.etudiantId
+            LEFT JOIN delegues_ecole de ON rs.id = de.responsableId
+            WHERE v.electionId = ?
+        `, [election.id]);
+
+        const [tokenCountRows] = await connection.execute(
+            'SELECT COUNT(*) as count FROM vote_tokens WHERE electionId = ?',
+            [election.id]
+        );
+
+        const totalInscrits = tokenCountRows[0].count;
+
+        // Vérifier le tour de l'élection
+        const tour = election.tour || 1;
+
+        if (tour === 1) {
+            // TOUR 1: Pondération 80/20 (délégués / autres)
+            const votesDelegues = voteRows.filter(vote => vote.is_delegue);
+            const votesAutres = voteRows.filter(vote => !vote.is_delegue);
+
+            const totalVotesDelegues = votesDelegues.length;
+            const totalVotesAutres = votesAutres.length;
+
+            // Calcul avec pondération 80/20 sur les POURCENTAGES
+            // Le groupe délégués pèse 80% du résultat final
+            // Le groupe autres pèse 20% du résultat final
+            const resultats = candidateRows.map(candidate => {
+                const votesDel = votesDelegues.filter(vote => vote.candidateId === candidate.id);
+                const votesAut = votesAutres.filter(vote => vote.candidateId === candidate.id);
+
+                const nombreVotesDel = votesDel.length;
+                const nombreVotesAut = votesAut.length;
+
+                // Calculer le % dans chaque groupe
+                const pctDelegues = totalVotesDelegues > 0 ? (nombreVotesDel / totalVotesDelegues) * 100 : 0;
+                const pctAutres = totalVotesAutres > 0 ? (nombreVotesAut / totalVotesAutres) * 100 : 0;
+
+                // Appliquer la pondération 80/20 sur les pourcentages
+                const pourcentage = (pctDelegues * 0.8) + (pctAutres * 0.2);
+
+                return {
+                    candidateId: candidate.id,
+                    nom: candidate.nom,
+                    prenom: candidate.prenom,
+                    photoUrl: candidate.photoUrl,
+                    slogan: candidate.slogan,
+                    scoreFinal: parseFloat(pourcentage.toFixed(2)),
+                    details: {
+                        totalVotes: nombreVotesDel + nombreVotesAut,
+                        votesDelegues: nombreVotesDel,
+                        votesAutres: nombreVotesAut,
+                        pctDelegues: parseFloat(pctDelegues.toFixed(2)),
+                        pctAutres: parseFloat(pctAutres.toFixed(2))
+                    }
+                };
+            });
+
+            resultats.sort((a, b) => b.scoreFinal - a.scoreFinal);
+
+            const uniqueVoters = new Set(voteRows.map(vote => vote.userId)).size;
+
+            return {
+                election: election,
+                tour: 1,
+                statistiques: {
+                    totalVotes: voteRows.length,
+                    votesDelegues: totalVotesDelegues,
+                    votesAutres: totalVotesAutres,
+                    totalInscrits: totalInscrits,
+                    electeursAyantVote: uniqueVoters,
+                    tauxParticipation: totalInscrits > 0
+                        ? parseFloat(((uniqueVoters / totalInscrits) * 100).toFixed(2))
+                        : 0,
+                    ponderation: '80% du groupe délégués + 20% du groupe autres'
+                },
+                resultats: resultats
+            };
+
+        } else {
+            // TOUR 2: Transfert de votes
+            // Les candidats classés votent et transfèrent tous leurs votes
+            // Note: La logique du tour 2 nécessite des données supplémentaires
+            // sur les votes des candidats et leur transfert
+
+            // Pour l'instant, on retourne un résultat basique
+            // Cette partie devra être implémentée avec la logique de transfert
+
+            const resultats = candidateRows.map(candidate => {
+                const votes = voteRows.filter(vote => vote.candidateId === candidate.id);
+                const scorePondere = votes.length;
+                const totalVotes = voteRows.length;
+                const pourcentage = totalVotes > 0 ? (scorePondere / totalVotes) * 100 : 0;
+
+                return {
+                    candidateId: candidate.id,
+                    nom: candidate.nom,
+                    prenom: candidate.prenom,
+                    photoUrl: candidate.photoUrl,
+                    slogan: candidate.slogan,
+                    scoreFinal: parseFloat(pourcentage.toFixed(2)),
+                    details: {
+                        totalVotes: votes.length,
+                        votesTransferes: 0 // À implémenter avec vote_transfers
+                    }
+                };
+            });
+
+            resultats.sort((a, b) => b.scoreFinal - a.scoreFinal);
+
+            const uniqueVoters = new Set(voteRows.map(vote => vote.userId)).size;
+
+            return {
+                election: election,
+                tour: 2,
+                note: 'Logique de transfert de votes à implémenter',
+                statistiques: {
+                    totalVotes: voteRows.length,
+                    totalInscrits: totalInscrits,
+                    electeursAyantVote: uniqueVoters,
+                    tauxParticipation: totalInscrits > 0
+                        ? parseFloat(((uniqueVoters / totalInscrits) * 100).toFixed(2))
+                        : 0
+                },
+                resultats: resultats
+            };
+        }
     }
 
     async getDetailedResults(electionId) {
@@ -469,12 +609,17 @@ class VoteService {
 
             const election = electionRows[0];
 
-            // Pour les élections d'école, utiliser le calcul spécial 60/40
+            // Pour les élections d'école, utiliser le calcul spécial 80/20
             if (election.type === 'ECOLE') {
                 return await this.calculateDetailedSchoolResults(connection, election);
             }
 
-            // Pour les autres types d'élection, utiliser le calcul normal détaillé
+            // Pour les élections d'université, utiliser le calcul 80/20 délégués/autres
+            if (election.type === 'UNIVERSITE') {
+                return await this.calculateUniversityElectionResults(connection, election);
+            }
+
+            // Pour les élections de salle, utiliser le calcul normal détaillé
             return await this.calculateDetailedNormalResults(connection, election);
 
         } catch (error) {
@@ -615,12 +760,13 @@ class VoteService {
         const votesResponsables = voteRows.filter(vote => vote.is_responsable);
         const votesEtudiants = voteRows.filter(vote => !vote.is_responsable);
 
-        // Calcul du total pondéré de l'élection
+        // Compter le total dans chaque groupe
         const totalVotesResponsables = votesResponsables.length;
         const totalVotesEtudiants = votesEtudiants.length;
-        const totalPondere = (totalVotesResponsables * 0.6) + (totalVotesEtudiants * 0.4);
 
-        // Calcul des résultats avec pondération 60/40
+        // Calcul des résultats avec pondération 80/20 sur les POURCENTAGES
+        // Le groupe responsables pèse 80% du résultat final
+        // Le groupe étudiants pèse 20% du résultat final
         const resultats = candidateRows.map(candidate => {
             const votesRespo = votesResponsables.filter(vote => vote.candidateId === candidate.id);
             const votesEtud = votesEtudiants.filter(vote => vote.candidateId === candidate.id);
@@ -628,9 +774,12 @@ class VoteService {
             const nombreVotesRespo = votesRespo.length;
             const nombreVotesEtud = votesEtud.length;
 
-            // Appliquer la pondération 60/40
-            const scorePondere = (nombreVotesRespo * 0.6) + (nombreVotesEtud * 0.4);
-            const pourcentage = totalPondere > 0 ? (scorePondere / totalPondere) * 100 : 0;
+            // Calculer le % dans chaque groupe
+            const pctResponsables = totalVotesResponsables > 0 ? (nombreVotesRespo / totalVotesResponsables) * 100 : 0;
+            const pctEtudiants = totalVotesEtudiants > 0 ? (nombreVotesEtud / totalVotesEtudiants) * 100 : 0;
+
+            // Appliquer la pondération 80/20 sur les pourcentages
+            const pourcentage = (pctResponsables * 0.8) + (pctEtudiants * 0.2);
 
             return {
                 candidateId: candidate.id,
@@ -645,10 +794,8 @@ class VoteService {
                     votesResponsables: nombreVotesRespo,
                     votesEtudiants: nombreVotesEtud,
                     totalVotes: nombreVotesRespo + nombreVotesEtud,
-                    scorePondere: parseFloat(scorePondere.toFixed(2)),
-                    poidsMoyen: (nombreVotesRespo + nombreVotesEtud) > 0
-                        ? parseFloat((scorePondere / (nombreVotesRespo + nombreVotesEtud)).toFixed(2))
-                        : 0
+                    pctResponsables: parseFloat(pctResponsables.toFixed(2)),
+                    pctEtudiants: parseFloat(pctEtudiants.toFixed(2))
                 }
             };
         });
@@ -664,12 +811,12 @@ class VoteService {
                 totalVotes: voteRows.length,
                 votesResponsables: totalVotesResponsables,
                 votesEtudiants: totalVotesEtudiants,
-                totalPondere: totalPondere,
                 totalInscrits: totalInscrits,
                 electeursAyantVote: uniqueVoters,
                 tauxParticipation: totalInscrits > 0
                     ? parseFloat(((uniqueVoters / totalInscrits) * 100).toFixed(2))
-                    : 0
+                    : 0,
+                ponderation: '80% du groupe responsables + 20% du groupe étudiants'
             },
             resultats: resultats
         };
@@ -727,6 +874,11 @@ class VoteService {
         }
     }
 
+    /**
+     * Vérifier si un étudiant est éligible pour voter dans une élection
+     * Note: Pour UNIVERSITE Tour 2, retourne true ici mais la vérification
+     * complète se fait dans generateVoteToken() via isCandidateFromTour1()
+     */
     isEligibleForElection(etudiant, election) {
         if (!etudiant || !election) return false;
 
@@ -745,9 +897,44 @@ class VoteService {
         } else if (election.type === 'ECOLE') {
             return etudiantEcole === electionEcole;
         } else if (election.type === 'UNIVERSITE') {
+            // Tour 1: Tous les étudiants peuvent voter
+            // Tour 2: Vérification asynchrone dans generateVoteToken()
             return true;
         }
         return false;
+    }
+
+    /**
+     * Vérifier si un utilisateur était candidat dans l'élection Tour 1 (parent)
+     * Utilisé pour déterminer qui peut voter au Tour 2
+     * 
+     * @param {Object} connection - Connexion à la base de données
+     * @param {String} userId - ID de l'utilisateur
+     * @param {Object} election - Objet élection (Tour 2)
+     * @returns {Promise<Boolean>} True si l'utilisateur était candidat au Tour 1
+     */
+    async isCandidateFromTour1(connection, userId, election) {
+        try {
+            // Vérifier que c'est bien un Tour 2 avec un parent
+            if (election.tour !== 2 || !election.parentElectionId) {
+                return false;
+            }
+
+            // Chercher si l'utilisateur était candidat dans l'élection parent (Tour 1)
+            const [candidateRows] = await connection.execute(`
+                SELECT c.id, c.statut 
+                FROM candidates c
+                WHERE c.userId = ? 
+                AND c.electionId = ?
+                AND c.statut = 'APPROUVE'
+            `, [userId, election.parentElectionId]);
+
+            return candidateRows.length > 0;
+
+        } catch (error) {
+            console.error('❌ Erreur dans isCandidateFromTour1:', error.message);
+            return false;
+        }
     }
 
     async publishResults(electionId, userId) {
