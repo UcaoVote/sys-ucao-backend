@@ -10,6 +10,72 @@ function toMySQLDateTime(dateString) {
     return date.toISOString().slice(0, 19).replace('T', ' ');
 }
 
+/**
+ * Copie automatiquement les candidats approuvés d'une élection Tour 1 vers une élection Tour 2
+ * @param {number} tour2ElectionId - ID de l'élection Tour 2
+ * @param {number} tour1ElectionId - ID de l'élection Tour 1 parent
+ */
+async function copyCandidatesFromParent(tour2ElectionId, tour1ElectionId) {
+    try {
+        // Récupérer tous les candidats APPROUVÉS du Tour 1
+        const [tour1Candidates] = await pool.execute(`
+            SELECT 
+                userId, 
+                photoUrl, 
+                description, 
+                program,
+                dateCreation
+            FROM candidates 
+            WHERE electionId = ? 
+            AND status = 'APPROUVEE'
+        `, [tour1ElectionId]);
+
+        if (tour1Candidates.length === 0) {
+            console.log('ℹ️ Aucun candidat approuvé à copier depuis le Tour 1');
+            return 0;
+        }
+
+        // Insérer les candidats dans le Tour 2 avec statut APPROUVEE
+        let copiedCount = 0;
+        for (const candidate of tour1Candidates) {
+            try {
+                await pool.execute(`
+                    INSERT INTO candidates (
+                        electionId, 
+                        userId, 
+                        photoUrl, 
+                        description, 
+                        program, 
+                        status, 
+                        dateCreation
+                    ) VALUES (?, ?, ?, ?, ?, 'APPROUVEE', NOW())
+                `, [
+                    tour2ElectionId,
+                    candidate.userId,
+                    candidate.photoUrl || null,
+                    candidate.description || null,
+                    candidate.program || null
+                ]);
+                copiedCount++;
+            } catch (insertError) {
+                // Si le candidat existe déjà (contrainte unique), on l'ignore
+                if (insertError.code === 'ER_DUP_ENTRY') {
+                    console.log(`⚠️ Candidat userId=${candidate.userId} déjà présent dans Tour 2`);
+                } else {
+                    throw insertError;
+                }
+            }
+        }
+
+        console.log(`✅ ${copiedCount} candidat(s) copié(s) du Tour 1 (ID: ${tour1ElectionId}) vers Tour 2 (ID: ${tour2ElectionId})`);
+        return copiedCount;
+
+    } catch (error) {
+        console.error('❌ Erreur lors de la copie des candidats:', error);
+        throw error;
+    }
+}
+
 
 async function getStudentInfo(userId) {
     try {
@@ -408,13 +474,40 @@ async function createElection(req, res) {
         const {
             type, titre, description, dateDebut, dateFin,
             dateDebutCandidature, dateFinCandidature, filiereId,
-            annee, ecoleId, niveau, delegueType, resultsVisibility, tour, responsableType
+            annee, ecoleId, niveau, delegueType, resultsVisibility, tour, responsableType, parentElectionId
         } = req.body;
 
         // Validation des données obligatoires
         if (!type || !titre || !dateDebut || !dateFin ||
             !dateDebutCandidature || !dateFinCandidature || !niveau) {
             return res.status(400).json({ error: 'Données manquantes' });
+        }
+
+        // Validation spécifique pour Tour 2 UNIVERSITE
+        if (type === 'UNIVERSITE' && tour === 2) {
+            if (!parentElectionId) {
+                return res.status(400).json({
+                    error: 'parentElectionId requis pour une élection UNIVERSITE Tour 2'
+                });
+            }
+
+            // Vérifier que l'élection parent existe et est bien un Tour 1 UNIVERSITE
+            const [parentElection] = await pool.execute(
+                'SELECT id, tour, type FROM elections WHERE id = ?',
+                [parentElectionId]
+            );
+
+            if (parentElection.length === 0) {
+                return res.status(404).json({
+                    error: 'Élection parent introuvable'
+                });
+            }
+
+            if (parentElection[0].type !== 'UNIVERSITE' || parentElection[0].tour !== 1) {
+                return res.status(400).json({
+                    error: 'L\'élection parent doit être une élection UNIVERSITE Tour 1'
+                });
+            }
         }
 
         // Utilitaire safe avec valeur par défaut
@@ -429,9 +522,9 @@ async function createElection(req, res) {
     INSERT INTO elections (
         type, titre, description, dateDebut, dateFin, 
         dateDebutCandidature, dateFinCandidature, filiereId, 
-        annee, ecoleId, niveau, delegueType, resultsVisibility, tour, responsableType
+        annee, ecoleId, niveau, delegueType, resultsVisibility, tour, responsableType, parentElectionId
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
 
 
@@ -450,12 +543,24 @@ async function createElection(req, res) {
             safeValue(delegueType),
             safeValue(resultsVisibility),
             safeValue(tour, 1),
-            safeValue(responsableType)
+            safeValue(responsableType),
+            safeValue(parentElectionId)
         ];
 
 
         const [result] = await pool.execute(query, values);
         const electionId = result.insertId;
+
+        // Si c'est un Tour 2, copier automatiquement les candidats du Tour 1
+        if (type === 'UNIVERSITE' && tour === 2 && parentElectionId) {
+            try {
+                await copyCandidatesFromParent(electionId, parentElectionId);
+                console.log(`✅ Candidats copiés du Tour 1 (ID: ${parentElectionId}) vers Tour 2 (ID: ${electionId})`);
+            } catch (copyError) {
+                console.error('❌ Erreur lors de la copie des candidats:', copyError);
+                // On continue quand même car l'élection est créée
+            }
+        }
 
         // Création du log d'activité
         try {

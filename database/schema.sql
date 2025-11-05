@@ -171,6 +171,7 @@ CREATE TABLE `elections` (
   `isActive` tinyint(1) DEFAULT '1',
   `resultsVisibility` varchar(20) COLLATE utf8mb4_general_ci DEFAULT 'IMMEDIATE',
   `tour` int DEFAULT '1',
+  `parentElectionId` int DEFAULT NULL,
   `ecoleId` int DEFAULT NULL,
   `filiereId` int DEFAULT NULL,
   `resultsPublished` tinyint(1) DEFAULT '0',
@@ -183,8 +184,10 @@ CREATE TABLE `elections` (
   KEY `idx_elections_active` (`isActive`),
   KEY `idx_elections_ecoleId` (`ecoleId`),
   KEY `idx_elections_filiereId` (`filiereId`),
+  KEY `idx_elections_parent` (`parentElectionId`),
   CONSTRAINT `fk_elections_ecoleId` FOREIGN KEY (`ecoleId`) REFERENCES `ecoles` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `fk_elections_filiereId` FOREIGN KEY (`filiereId`) REFERENCES `filieres` (`id`) ON DELETE SET NULL
+  CONSTRAINT `fk_elections_filiereId` FOREIGN KEY (`filiereId`) REFERENCES `filieres` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_elections_parent` FOREIGN KEY (`parentElectionId`) REFERENCES `elections` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 DROP TABLE IF EXISTS `etudiants`;
