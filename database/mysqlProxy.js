@@ -22,7 +22,7 @@ class MySQLProxy {
                 'Authorization': `Bearer ${PROXY_SECRET}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 30000
+            timeout: 60000
         });
     }
 
