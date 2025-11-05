@@ -60,23 +60,44 @@ const debugUpload = (req, res, next) => {
 router.post('/image',
     authenticateToken,
     debugUpload,
-    uploadLocal.single('image'),
-    handleUploadError,
-    async (req, res) => {
+    (req, res, next) => {
+        uploadLocal.single('image')(req, res, (err) => {
+            if (err) {
+                return handleUploadError(err, req, res, next);
+            }
+            next();
+        });
+    },
+    async (req, res, next) => {
         try {
+            console.log('🔍 Route handler - req.file:', req.file ? 'EXISTS' : 'NULL');
+            console.log('🔍 Route handler - res.headersSent:', res.headersSent);
+
+            if (res.headersSent) {
+                console.log('⚠️ Headers déjà envoyés, abandon du handler');
+                return;
+            }
+
             if (!req.file) {
+                console.log('❌ Aucun fichier dans req.file');
                 return res.status(400).json({
                     success: false,
                     message: 'Aucun fichier reçu'
                 });
             }
 
-            console.log('✅ Fichier reçu:', req.file);
+            console.log('✅ Fichier reçu:', {
+                filename: req.file.filename,
+                size: req.file.size,
+                mimetype: req.file.mimetype
+            });
 
             // Générer l'URL publique
             const publicUrl = getPublicUrl(req.file.filename, 'photos');
 
-            res.json({
+            console.log('✅ URL publique générée:', publicUrl);
+
+            const responseData = {
                 success: true,
                 message: 'Image uploadée avec succès',
                 data: {
@@ -86,15 +107,23 @@ router.post('/image',
                     mimetype: req.file.mimetype,
                     path: req.file.path
                 }
-            });
+            };
+
+            console.log('📤 Envoi réponse:', responseData);
+
+            return res.status(200).json(responseData);
 
         } catch (error) {
             console.error('❌ Erreur upload image:', error);
-            res.status(500).json({
-                success: false,
-                message: 'Erreur lors de l\'upload',
-                error: error.message
-            });
+            console.error('❌ Stack:', error.stack);
+
+            if (!res.headersSent) {
+                return res.status(500).json({
+                    success: false,
+                    message: 'Erreur lors de l\'upload',
+                    error: error.message
+                });
+            }
         }
     }
 );
