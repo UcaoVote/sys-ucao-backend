@@ -99,7 +99,7 @@ const uploadLocal = multer({
 
 // Fonction helper pour obtenir l'URL publique du fichier
 export function getPublicUrl(filename, type = 'photos') {
-    // URL de base de votre site
+    // Les fichiers sont stockés sur le serveur LWS
     const baseUrl = process.env.FRONTEND_URL || 'https://oeuvreuniversitaire.ucaobenin.org';
     return `${baseUrl}/uploads/${type}/${filename}`;
 }
