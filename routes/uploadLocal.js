@@ -8,6 +8,10 @@ import pool from '../database/dbconfig.js';
 
 const router = express.Router();
 
+// Récupérer le secret (PROXY_SECRET ou MYSQL_PROXY_SECRET)
+const UPLOAD_SECRET = process.env.PROXY_SECRET || process.env.MYSQL_PROXY_SECRET;
+console.log('🔑 Upload secret chargé:', UPLOAD_SECRET ? `OUI (${UPLOAD_SECRET.length} caractères)` : 'NON');
+
 // Middleware pour gérer les erreurs de Multer
 const handleUploadError = (error, req, res, next) => {
     console.error('❌ Multer error:', error);
@@ -106,7 +110,7 @@ router.post('/image',
                 {
                     headers: {
                         ...formData.getHeaders(),
-                        'Authorization': `Bearer ${process.env.MYSQL_PROXY_SECRET}`
+                        'Authorization': `Bearer ${UPLOAD_SECRET}`
                     },
                     maxBodyLength: Infinity,
                     maxContentLength: Infinity
@@ -221,7 +225,7 @@ router.post('/candidats/image',
             formData.append('type', 'candidats');
             formData.append('filename', req.file.filename);
 
-            console.log('🔑 Secret utilisé:', process.env.MYSQL_PROXY_SECRET ? 'DÉFINI (longueur: ' + process.env.MYSQL_PROXY_SECRET.length + ')' : 'NON DÉFINI');
+            console.log('🔑 Secret utilisé:', UPLOAD_SECRET ? 'DÉFINI (longueur: ' + UPLOAD_SECRET.length + ')' : 'NON DÉFINI');
 
             const lwsResponse = await axios.post(
                 'https://oeuvreuniversitaire.ucaobenin.org/api/upload-handler.php',
@@ -229,7 +233,7 @@ router.post('/candidats/image',
                 {
                     headers: {
                         ...formData.getHeaders(),
-                        'Authorization': `Bearer ${process.env.MYSQL_PROXY_SECRET}`
+                        'Authorization': `Bearer ${UPLOAD_SECRET}`
                     },
                     maxBodyLength: Infinity,
                     maxContentLength: Infinity
@@ -320,7 +324,7 @@ router.post('/documents',
                 {
                     headers: {
                         ...formData.getHeaders(),
-                        'Authorization': `Bearer ${process.env.MYSQL_PROXY_SECRET}`
+                        'Authorization': `Bearer ${UPLOAD_SECRET}`
                     },
                     maxBodyLength: Infinity,
                     maxContentLength: Infinity
@@ -402,7 +406,7 @@ router.post('/elections/image',
                 {
                     headers: {
                         ...formData.getHeaders(),
-                        'Authorization': `Bearer ${process.env.MYSQL_PROXY_SECRET}`
+                        'Authorization': `Bearer ${UPLOAD_SECRET}`
                     },
                     maxBodyLength: Infinity,
                     maxContentLength: Infinity
