@@ -221,6 +221,8 @@ router.post('/candidats/image',
             formData.append('type', 'candidats');
             formData.append('filename', req.file.filename);
 
+            console.log('🔑 Secret utilisé:', process.env.MYSQL_PROXY_SECRET ? 'DÉFINI (longueur: ' + process.env.MYSQL_PROXY_SECRET.length + ')' : 'NON DÉFINI');
+
             const lwsResponse = await axios.post(
                 'https://oeuvreuniversitaire.ucaobenin.org/api/upload-handler.php',
                 formData,
@@ -255,13 +257,19 @@ router.post('/candidats/image',
 
         } catch (error) {
             console.error('❌ Erreur upload candidat:', error.message);
+            if (error.response) {
+                console.error('📋 Statut LWS:', error.response.status);
+                console.error('📋 Réponse LWS:', error.response.data);
+            }
             try {
                 if (req.file?.path) fs.unlinkSync(req.file.path);
             } catch (e) { }
             return res.status(500).json({
                 success: false,
                 message: 'Erreur lors de l\'upload',
-                error: error.message
+                error: error.message,
+                lwsStatus: error.response?.status,
+                lwsMessage: error.response?.data?.message
             });
         }
     }
