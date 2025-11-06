@@ -314,7 +314,7 @@ class VoteService {
                 nom: candidate.nom,
                 prenom: candidate.prenom,
                 photoUrl: candidate.photoUrl,
-                filiere: candidate.filiere,
+                filiere: election.filiereId, // Filière depuis l'élection
                 annee: candidate.annee,
                 slogan: candidate.slogan,
                 scoreFinal: parseFloat(pourcentage.toFixed(2)),
@@ -348,7 +348,7 @@ class VoteService {
 
     async calculateSchoolElectionResults(connection, election) {
         const [candidateRows] = await connection.execute(`
-            SELECT c.*, u.email, e.nom, e.prenom, e.filiere, e.annee
+            SELECT c.*, u.email, e.nom, e.prenom, e.filiereId, e.annee
             FROM candidates c
             LEFT JOIN users u ON c.userId = u.id
             LEFT JOIN etudiants e ON u.id = e.userId
@@ -405,7 +405,7 @@ class VoteService {
                 nom: candidate.nom,
                 prenom: candidate.prenom,
                 photoUrl: candidate.photoUrl,
-                filiere: candidate.filiere,
+                filiere: election.filiereId, // Filière depuis l'élection (pas candidate/etudiant)
                 annee: candidate.annee,
                 slogan: candidate.slogan,
                 scoreFinal: parseFloat(pourcentage.toFixed(2)),
@@ -689,7 +689,7 @@ class VoteService {
                 nom: candidate.nom,
                 prenom: candidate.prenom,
                 photoUrl: candidate.photoUrl,
-                filiere: candidate.filiereId,
+                filiere: election.filiereId, // Filière depuis l'élection
                 annee: candidate.annee,
                 slogan: candidate.slogan,
                 scoreFinal: parseFloat(pourcentage.toFixed(2)),
@@ -727,7 +727,7 @@ class VoteService {
 
     async calculateDetailedSchoolResults(connection, election) {
         const [candidateRows] = await connection.execute(`
-            SELECT c.*, u.email, e.nom, e.prenom, e.filiereId, e.annee
+            SELECT c.*, u.email, e.nom, e.prenom, e.annee
             FROM candidates c
             LEFT JOIN users u ON c.userId = u.id
             LEFT JOIN etudiants e ON u.id = e.userId
@@ -786,7 +786,7 @@ class VoteService {
                 nom: candidate.nom,
                 prenom: candidate.prenom,
                 photoUrl: candidate.photoUrl,
-                filiere: candidate.filiere,
+                filiere: election.filiereId, // Filière depuis l'élection
                 annee: candidate.annee,
                 slogan: candidate.slogan,
                 scoreFinal: parseFloat(pourcentage.toFixed(2)),

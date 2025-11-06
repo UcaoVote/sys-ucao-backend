@@ -23,7 +23,7 @@ export function buildStudentFilters({ filiere, annee, ecole, status, search }) {
     const queryParams = [];
 
     if (filiere) {
-        whereClause += ' AND e.filiere = ?';
+        whereClause += ' AND e.filiereId = ?';
         queryParams.push(filiere);
     }
 
@@ -33,7 +33,7 @@ export function buildStudentFilters({ filiere, annee, ecole, status, search }) {
     }
 
     if (ecole) {
-        whereClause += ' AND e.ecole = ?';
+        whereClause += ' AND e.ecoleId = ?';
         queryParams.push(ecole);
     }
 
