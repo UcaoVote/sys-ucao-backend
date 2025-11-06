@@ -1,6 +1,7 @@
 import pool from '../database/dbconfig.js';
 import resultService from '../services/resultService.js';
 import electionRoundService from '../services/electionRoundService.js';
+import voteService from '../services/voteService.js';
 
 class ElectionInitializer {
 
@@ -13,7 +14,7 @@ class ElectionInitializer {
 
             // Récupérer les élections actives terminées
             const [electionRows] = await connection.execute(`
-                SELECT * FROM elections 
+                SELECT * FROM elections
                 WHERE isActive = TRUE AND dateFin < NOW()
             `);
 
@@ -45,6 +46,11 @@ class ElectionInitializer {
                     console.error(`❌ Erreur traitement élection ${election.id}:`, error.message);
                 }
             }
+
+            // Publier automatiquement les élections en mode IMMEDIATE
+            console.log('🔄 Vérification des publications automatiques...');
+            await voteService.publishAutomaticElections();
+
         } catch (error) {
             console.error('❌ Erreur processCompletedElections:', error.message);
         } finally {

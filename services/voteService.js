@@ -1264,19 +1264,152 @@ class VoteService {
         try {
             connection = await pool.getConnection();
 
-            // Publier automatiquement les élections terminées en mode automatique
-            const [result] = await connection.execute(`
-                UPDATE elections 
-                SET resultsPublished = TRUE, publishedAt = NOW()
-                WHERE isActive = FALSE 
+            // Trouver les élections terminées en mode IMMEDIATE qui ne sont pas encore publiées
+            const [electionsToPublish] = await connection.execute(`
+                SELECT * FROM elections
+                WHERE isActive = FALSE
                 AND resultsVisibility = 'IMMEDIATE'
                 AND resultsPublished = FALSE
                 AND dateFin < NOW()
             `);
 
-            if (result.affectedRows > 0) {
-                console.log(`📢 ${result.affectedRows} élection(s) publiée(s) automatiquement`);
+            console.log(`📢 ${electionsToPublish.length} élection(s) à publier automatiquement`);
+
+            for (const election of electionsToPublish) {
+                try {
+                    console.log(`🔄 Publication automatique de l'élection ${election.id}: ${election.titre}`);
+
+                    // Calculer les résultats complets
+                    const results = await this.getElectionResults(election.id);
+
+                    if (!results || !results.resultats || results.resultats.length === 0) {
+                        console.warn(`⚠️ Aucun résultat calculé pour l'élection ${election.id}`);
+                        continue;
+                    }
+
+                    // Sauvegarder les résultats dans la table election_results
+                    await connection.execute(
+                        'DELETE FROM election_results WHERE electionId = ?',
+                        [election.id]
+                    );
+
+                    for (const candidat of results.resultats) {
+                        const isWinner = candidat === results.resultats[0]; // Le premier est le gagnant
+
+                        await connection.execute(`
+                            INSERT INTO election_results
+                            (electionId, candidateId, roundNumber, votes, pourcentage, isWinner, createdAt, updatedAt)
+                            VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+                        `, [
+                            election.id,
+                            candidat.candidateId,
+                            election.tour || 1,
+                            candidat.details.totalVotes,
+                            candidat.scoreFinal,
+                            isWinner ? 1 : 0
+                        ]);
+                    }
+
+                    // Créer les gagnants dans les tables appropriées selon le type d'élection
+                    if (results.resultats.length > 0) {
+                        const gagnant = results.resultats[0];
+
+                        // Récupérer l'etudiantId depuis le candidat
+                        const [candidateInfo] = await connection.execute(`
+                            SELECT c.userId, e.id as etudiantId, e.annee, e.ecoleId, e.filiereId
+                            FROM candidates c
+                            JOIN users u ON c.userId = u.id
+                            JOIN etudiants e ON u.id = e.userId
+                            WHERE c.id = ?
+                        `, [gagnant.candidateId]);
+
+                        if (candidateInfo.length > 0) {
+                            const etudiant = candidateInfo[0];
+
+                            if (election.type === 'SALLE') {
+                                // Créer responsable de salle
+                                const [existing] = await connection.execute(
+                                    'SELECT id FROM responsables_salle WHERE etudiantId = ? AND annee = ?',
+                                    [etudiant.etudiantId, etudiant.annee]
+                                );
+
+                                if (existing.length === 0) {
+                                    await connection.execute(`
+                                        INSERT INTO responsables_salle
+                                        (etudiantId, annee, ecoleId, filiereId, createdAt)
+                                        VALUES (?, ?, ?, ?, NOW())
+                                    `, [
+                                        etudiant.etudiantId,
+                                        etudiant.annee,
+                                        etudiant.ecoleId,
+                                        etudiant.filiereId
+                                    ]);
+                                    console.log(`✅ Responsable de salle créé: etudiantId=${etudiant.etudiantId}, annee=${etudiant.annee}`);
+                                }
+                            }
+                            else if (election.type === 'ECOLE') {
+                                // Créer délégué d'école
+                                const [responsableRows] = await connection.execute(`
+                                    SELECT id FROM responsables_salle
+                                    WHERE etudiantId = ? AND annee = ?
+                                `, [etudiant.etudiantId, election.delegueType === 'PREMIER' ? 3 : 2]);
+
+                                if (responsableRows.length > 0) {
+                                    const [existing] = await connection.execute(
+                                        'SELECT id FROM delegues_ecole WHERE responsableId = ? AND typeDelegue = ?',
+                                        [responsableRows[0].id, election.delegueType]
+                                    );
+
+                                    if (existing.length === 0) {
+                                        await connection.execute(`
+                                            INSERT INTO delegues_ecole (responsableId, typeDelegue, ecoleId, createdAt)
+                                            VALUES (?, ?, ?, NOW())
+                                        `, [responsableRows[0].id, election.delegueType, election.ecoleId]);
+                                        console.log(`✅ Délégué d'école créé: etudiantId=${etudiant.etudiantId}, type=${election.delegueType}`);
+                                    }
+                                }
+                            }
+                            else if (election.type === 'UNIVERSITE') {
+                                // Créer délégué universitaire
+                                const [delegueEcoleRows] = await connection.execute(`
+                                    SELECT de.id FROM delegues_ecole de
+                                    INNER JOIN responsables_salle rs ON de.responsableId = rs.id
+                                    WHERE rs.etudiantId = ? AND de.typeDelegue = ?
+                                `, [etudiant.etudiantId, election.delegueType]);
+
+                                if (delegueEcoleRows.length > 0) {
+                                    const [existing] = await connection.execute(
+                                        'SELECT id FROM delegues_universite WHERE delegueEcoleId = ? AND typeDelegue = ?',
+                                        [delegueEcoleRows[0].id, election.delegueType]
+                                    );
+
+                                    if (existing.length === 0) {
+                                        await connection.execute(`
+                                            INSERT INTO delegues_universite (delegueEcoleId, typeDelegue, createdAt)
+                                            VALUES (?, ?, NOW())
+                                        `, [delegueEcoleRows[0].id, election.delegueType]);
+                                        console.log(`✅ Délégué universitaire créé: etudiantId=${etudiant.etudiantId}, type=${election.delegueType}`);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Marquer l'élection comme publiée
+                    await connection.execute(
+                        'UPDATE elections SET resultsPublished = TRUE, publishedAt = NOW() WHERE id = ?',
+                        [election.id]
+                    );
+
+                    console.log(`✅ Élection ${election.id} publiée automatiquement avec ${results.resultats.length} résultats`);
+
+                } catch (electionError) {
+                    console.error(`❌ Erreur lors de la publication automatique de l'élection ${election.id}:`, electionError.message);
+                    // Continuer avec les autres élections même si une échoue
+                }
             }
+
+            console.log(`📢 Publication automatique terminée: ${electionsToPublish.length} élection(s) traitée(s)`);
 
         } catch (error) {
             console.error('❌ Erreur dans publishAutomaticElections:', error.message);
