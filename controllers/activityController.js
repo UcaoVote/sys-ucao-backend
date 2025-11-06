@@ -5,18 +5,21 @@ class ActivityController {
     async getCategories(req, res) {
         try {
             const [rows] = await pool.execute(
-                `SELECT 
-                id, 
-                nom, 
-                description, 
-                icone, 
-                has_subactivities, 
-                actif, 
-                created_at, 
-                updated_at 
-             FROM activities 
-             WHERE actif = TRUE 
-             ORDER BY nom`
+                `SELECT
+                a.id,
+                a.nom,
+                a.description,
+                a.icone,
+                a.has_subactivities,
+                a.actif,
+                a.created_at,
+                a.updated_at,
+                COUNT(sa.id) as activities_count
+             FROM activities a
+             LEFT JOIN subactivities sa ON a.id = sa.activity_id AND sa.actif = TRUE
+             WHERE a.actif = TRUE
+             GROUP BY a.id, a.nom, a.description, a.icone, a.has_subactivities, a.actif, a.created_at, a.updated_at
+             ORDER BY a.nom`
             );
 
             res.json({
