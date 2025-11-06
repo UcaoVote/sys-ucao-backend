@@ -196,11 +196,38 @@ class ResultService {
                 }
             }
 
-            // Marquer l'élection comme terminée
+            // Sauvegarder TOUS les résultats dans election_results
+            console.log(`💾 Sauvegarde de ${results.length} résultats dans election_results pour élection ${electionId}`);
+            for (const result of results) {
+                await connection.execute(`
+                    INSERT INTO election_results (
+                        electionId, candidateId, totalVotes, 
+                        votesPourcentage, rank, isWinner, createdAt
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, NOW())
+                    ON DUPLICATE KEY UPDATE
+                        totalVotes = VALUES(totalVotes),
+                        votesPourcentage = VALUES(votesPourcentage),
+                        rank = VALUES(rank),
+                        isWinner = VALUES(isWinner),
+                        updatedAt = NOW()
+                `, [
+                    electionId,
+                    result.candidateId,
+                    result.totalVotes || 0,
+                    result.votesPourcentage || 0,
+                    result.rank || 0,
+                    winners.some(w => w.candidateId === result.candidateId) ? 1 : 0
+                ]);
+            }
+            console.log(`✅ ${results.length} résultats sauvegardés dans election_results`);
+
+            // Marquer l'élection comme terminée et résultats publiés
             await connection.execute(
-                'UPDATE elections SET isActive = FALSE, dateFin = NOW() WHERE id = ?',
+                'UPDATE elections SET isActive = FALSE, resultsPublished = TRUE, dateFin = NOW() WHERE id = ?',
                 [electionId]
             );
+            console.log(`✅ Élection ${electionId} marquée comme terminée et résultats publiés`);
 
             return winners;
         } finally {
