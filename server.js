@@ -90,24 +90,29 @@ app.use(cors({
     preflightContinue: false
 }));
 
-// � Middleware de débogage CORS (après le middleware CORS)
+// Middleware de debogage CORS (apres le middleware CORS)
 app.use((req, res, next) => {
     const origin = req.headers.origin;
-    console.log('📋 En-têtes CORS ajoutés:', {
+    console.log('En-tetes CORS ajoutes:', {
         'Access-Control-Allow-Origin': res.getHeader('Access-Control-Allow-Origin'),
         'Access-Control-Allow-Methods': res.getHeader('Access-Control-Allow-Methods'),
         'Access-Control-Allow-Credentials': res.getHeader('Access-Control-Allow-Credentials'),
-        'Origine requête': origin
+        'Origine requete': origin
     });
     next();
 });
 
-// �📦 Middlewares de base
+// Middlewares de base
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Gestion explicite des requetes OPTIONS (preflight CORS)
+app.options('*', (req, res) => {
+    console.log('OPTIONS preflight recue pour:', req.url);
+    res.status(200).end();
+});
 
-// 🔄 Traitement périodique
+// Traitement periodique
 electionInitializer.startPeriodicProcessing();
 
 // 🩺 Health check
