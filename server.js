@@ -58,18 +58,25 @@ app.use((req, res, next) => {
 
 // 🔗 CORS - Configuration élargie pour production
 const allowedOrigins = [
-    'https://oeuvreuniversitaire.ucaobenin.org'
+    'https://oeuvreuniversitaire.ucaobenin.org',
+    'http://oeuvreuniversitaire.ucaobenin.org',
+    'https://www.oeuvreuniversitaire.ucaobenin.org',
+    'http://www.oeuvreuniversitaire.ucaobenin.org'
 ];
 
 app.use(cors({
     origin: (origin, callback) => {
+        console.log('🌍 Requête CORS reçue depuis:', origin);
+
         // Autoriser les requêtes sans origine (Postman, curl, etc.)
         if (!origin) {
+            console.log('✅ CORS: Requête sans origine - AUTORISÉ');
             return callback(null, true);
         }
 
         // Vérifier si l'origine est dans la liste OU si elle contient vercel.app
         if (allowedOrigins.includes(origin) || origin.includes('vercel.app')) {
+            console.log('✅ CORS: Origine autorisée -', origin);
             callback(null, true);
         } else {
             console.warn('❌ CORS bloqué pour origine:', origin);
@@ -79,10 +86,23 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     credentials: true,
-    optionsSuccessStatus: 200
+    optionsSuccessStatus: 200,
+    preflightContinue: false
 }));
 
-// 📦 Middlewares de base
+// � Middleware de débogage CORS (après le middleware CORS)
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    console.log('📋 En-têtes CORS ajoutés:', {
+        'Access-Control-Allow-Origin': res.getHeader('Access-Control-Allow-Origin'),
+        'Access-Control-Allow-Methods': res.getHeader('Access-Control-Allow-Methods'),
+        'Access-Control-Allow-Credentials': res.getHeader('Access-Control-Allow-Credentials'),
+        'Origine requête': origin
+    });
+    next();
+});
+
+// �📦 Middlewares de base
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
