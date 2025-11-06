@@ -974,6 +974,70 @@ class VoteService {
                 throw new Error('Cette élection est en mode automatique, la publication manuelle est désactivée');
             }
 
+            // Calculer les résultats complets
+            const results = await this.getElectionResults(parseInt(electionId));
+
+            // Sauvegarder les résultats dans la table election_results
+            await connection.execute(
+                'DELETE FROM election_results WHERE electionId = ?',
+                [parseInt(electionId)]
+            );
+
+            for (const candidat of results.resultats) {
+                const isWinner = candidat === results.resultats[0]; // Le premier est le gagnant
+
+                await connection.execute(`
+                    INSERT INTO election_results 
+                    (electionId, candidateId, roundNumber, votes, pourcentage, isWinner, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+                `, [
+                    parseInt(electionId),
+                    candidat.candidateId,
+                    election.tour || 1,
+                    candidat.details.totalVotes,
+                    candidat.scoreFinal,
+                    isWinner ? 1 : 0
+                ]);
+            }
+
+            // Si c'est une élection de SALLE, enregistrer le gagnant dans responsables_salle
+            if (election.type === 'SALLE' && results.resultats.length > 0) {
+                const gagnant = results.resultats[0];
+
+                // Récupérer l'etudiantId depuis le candidat
+                const [candidateInfo] = await connection.execute(`
+                    SELECT c.userId, e.id as etudiantId, e.annee, e.ecoleId, e.filiereId
+                    FROM candidates c
+                    JOIN users u ON c.userId = u.id
+                    JOIN etudiants e ON u.id = e.userId
+                    WHERE c.id = ?
+                `, [gagnant.candidateId]);
+
+                if (candidateInfo.length > 0) {
+                    const etudiant = candidateInfo[0];
+
+                    // Vérifier si le responsable n'existe pas déjà
+                    const [existing] = await connection.execute(
+                        'SELECT id FROM responsables_salle WHERE etudiantId = ? AND annee = ?',
+                        [etudiant.etudiantId, etudiant.annee]
+                    );
+
+                    if (existing.length === 0) {
+                        await connection.execute(`
+                            INSERT INTO responsables_salle 
+                            (etudiantId, annee, ecoleId, filiereId, createdAt)
+                            VALUES (?, ?, ?, ?, NOW())
+                        `, [
+                            etudiant.etudiantId,
+                            etudiant.annee,
+                            etudiant.ecoleId,
+                            etudiant.filiereId
+                        ]);
+                        console.log(`✅ Responsable de salle enregistré: etudiantId=${etudiant.etudiantId}, annee=${etudiant.annee}`);
+                    }
+                }
+            }
+
             await connection.execute(
                 'UPDATE elections SET resultsPublished = TRUE, publishedAt = NOW() WHERE id = ?',
                 [parseInt(electionId)]

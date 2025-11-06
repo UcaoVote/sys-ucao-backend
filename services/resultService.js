@@ -155,10 +155,10 @@ class ResultService {
                         if (election.phase === 'PHASE1') {
                             // Créer responsable de salle
                             await connection.execute(`
-                INSERT INTO responsables_salle (etudiantId, filiere, annee, ecole, createdAt)
+                INSERT INTO responsables_salle (etudiantId, filiereId, annee, ecoleId, createdAt)
                 VALUES (?, ?, ?, ?, NOW())
-                ON DUPLICATE KEY UPDATE updatedAt = NOW()
-              `, [etudiant.id, election.filiere, election.annee, election.ecole]);
+                ON DUPLICATE KEY UPDATE createdAt = NOW()
+              `, [etudiant.id, election.filiereId, election.annee, election.ecoleId]);
                         }
                         else if (election.phase === 'PHASE2') {
                             // Créer délégué d'école
@@ -170,10 +170,10 @@ class ResultService {
 
                             if (responsableRows.length > 0) {
                                 await connection.execute(`
-                  INSERT INTO delegues_ecole (responsableId, typeDelegue, ecole, createdAt)
+                  INSERT INTO delegues_ecole (responsableId, typeDelegue, ecoleId, createdAt)
                   VALUES (?, ?, ?, NOW())
-                  ON DUPLICATE KEY UPDATE updatedAt = NOW()
-                `, [responsableRows[0].id, election.delegueType, election.ecole]);
+                  ON DUPLICATE KEY UPDATE createdAt = NOW()
+                `, [responsableRows[0].id, election.delegueType, election.ecoleId]);
                             }
                         }
                         else if (election.phase === 'PHASE3') {
