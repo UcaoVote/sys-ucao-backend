@@ -201,22 +201,20 @@ class ResultService {
             for (const result of results) {
                 await connection.execute(`
                     INSERT INTO election_results (
-                        electionId, candidateId, totalVotes, 
-                        votesPourcentage, rank, isWinner, createdAt
+                        electionId, candidateId, votes,
+                        pourcentage, isWinner, createdAt
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, NOW())
+                    VALUES (?, ?, ?, ?, ?, NOW())
                     ON DUPLICATE KEY UPDATE
-                        totalVotes = VALUES(totalVotes),
-                        votesPourcentage = VALUES(votesPourcentage),
-                        rank = VALUES(rank),
+                        votes = VALUES(votes),
+                        pourcentage = VALUES(pourcentage),
                         isWinner = VALUES(isWinner),
                         updatedAt = NOW()
                 `, [
                     electionId,
                     result.candidateId,
-                    result.totalVotes || 0,
-                    result.votesPourcentage || 0,
-                    result.rank || 0,
+                    result.totalVotes || result.votes || 0,
+                    result.votesPourcentage || result.pourcentage || 0,
                     winners.some(w => w.candidateId === result.candidateId) ? 1 : 0
                 ]);
             }
