@@ -623,6 +623,146 @@ async function createElection(req, res) {
 }
 
 
+async function bulkCreateElections(req, res) {
+    const connection = await pool.getConnection();
+    
+    try {
+        const {
+            titre, description, dateDebut, dateFin,
+            dateDebutCandidature, dateFinCandidature,
+            ecoleId, annees, responsableType, resultsVisibility
+        } = req.body;
+
+        // Validation
+        if (!titre || !dateDebut || !dateFin || !dateDebutCandidature || 
+            !dateFinCandidature || !ecoleId || !annees || !Array.isArray(annees)) {
+            return res.status(400).json({ error: 'Données manquantes ou invalides' });
+        }
+
+        // Récupérer toutes les filières actives de l'école
+        const [filieres] = await connection.execute(
+            'SELECT id, nom FROM filieres WHERE ecoleId = ? AND actif = TRUE',
+            [ecoleId]
+        );
+
+        if (filieres.length === 0) {
+            return res.status(404).json({ error: 'Aucune filière active trouvée pour cette école' });
+        }
+
+        await connection.beginTransaction();
+
+        const createdElections = [];
+        const errors = [];
+
+        // Créer une élection pour chaque combinaison filière × année
+        for (const filiere of filieres) {
+            for (const annee of annees) {
+                try {
+                    const electionTitre = `${titre} - ${filiere.nom} L${annee}`;
+                    
+                    const query = `
+                        INSERT INTO elections (
+                            type, titre, description, dateDebut, dateFin,
+                            dateDebutCandidature, dateFinCandidature, filiereId,
+                            annee, ecoleId, niveau, responsableType, resultsVisibility
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    `;
+
+                    const values = [
+                        'SALLE',
+                        electionTitre,
+                        description || '',
+                        toMySQLDateTime(dateDebut),
+                        toMySQLDateTime(dateFin),
+                        toMySQLDateTime(dateDebutCandidature),
+                        toMySQLDateTime(dateFinCandidature),
+                        filiere.id,
+                        annee,
+                        ecoleId,
+                        'PHASE1',
+                        responsableType || 'PREMIER',
+                        resultsVisibility || 'IMMEDIATE'
+                    ];
+
+                    const [result] = await connection.execute(query, values);
+                    
+                    createdElections.push({
+                        id: result.insertId,
+                        titre: electionTitre,
+                        filiere: filiere.nom,
+                        annee: annee
+                    });
+                } catch (error) {
+                    errors.push({
+                        filiere: filiere.nom,
+                        annee: annee,
+                        error: error.message
+                    });
+                }
+            }
+        }
+
+        if (errors.length > 0 && createdElections.length === 0) {
+            await connection.rollback();
+            return res.status(500).json({ 
+                error: 'Échec de la création de toutes les élections',
+                details: errors 
+            });
+        }
+
+        await connection.commit();
+
+        // Log d'activité
+        try {
+            await ActivityManager.insertActivityLog({
+                action: 'Création groupée d\'élections',
+                details: `${createdElections.length} élections créées pour l'école ${ecoleId}`,
+                userId: req.user?.id ?? null,
+                actionType: 'ADMIN'
+            });
+        } catch (logError) {
+            console.error('Erreur log:', logError);
+        }
+
+        // Notifications aux étudiants concernés
+        try {
+            const [students] = await connection.execute(
+                'SELECT DISTINCT userId FROM etudiants WHERE ecoleId = ? AND actif = TRUE',
+                [ecoleId]
+            );
+
+            const destinataires = students.map(s => s.userId).filter(id => id);
+
+            if (destinataires.length > 0) {
+                await NotificationService.notifyNewElection(
+                    { 
+                        id: createdElections[0].id, 
+                        titre: `${createdElections.length} nouvelles élections disponibles`,
+                        description: description || 'Consultez les élections disponibles' 
+                    },
+                    destinataires
+                );
+            }
+        } catch (notifyError) {
+            console.error('Erreur notifications:', notifyError);
+        }
+
+        res.status(201).json({
+            message: `${createdElections.length} élection(s) créée(s) avec succès`,
+            created: createdElections.length,
+            elections: createdElections,
+            errors: errors.length > 0 ? errors : undefined
+        });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erreur création groupée:', error);
+        res.status(500).json({ error: 'Erreur serveur lors de la création groupée' });
+    } finally {
+        connection.release();
+    }
+}
+
 export default {
     getStudentInfo,
     getAllElections,
@@ -632,5 +772,6 @@ export default {
     deleteElection,
     getActiveElections,
     getElectionsForStudent,
-    getElectionsWithFilters
+    getElectionsWithFilters,
+    bulkCreateElections
 };

@@ -81,6 +81,16 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     }
 });
 
+// Création groupée d'élections pour toutes les filières et années
+router.post('/bulk-create', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        await electionManager.bulkCreateElections(req, res);
+    } catch (error) {
+        console.error('Erreur dans bulkCreateElections :', error.message);
+        res.status(500).json({ error: 'Erreur interne lors de la création groupée des élections.' });
+    }
+});
+
 
 // Modifier une election
 router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
