@@ -178,22 +178,40 @@ router.get('/:studentId/status/responsable-salle', authenticateToken, async (req
     try {
         connection = await pool.getConnection();
 
+        // Récupérer l'etudiantId depuis userId si c'est un string
+        let etudiantId = studentId;
+        if (isNaN(studentId)) {
+            // C'est un userId (string), récupérer l'etudiantId
+            const [etudiantRows] = await connection.execute(
+                'SELECT id FROM etudiants WHERE userId = ?',
+                [studentId]
+            );
+
+            if (etudiantRows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Étudiant non trouvé'
+                });
+            }
+
+            etudiantId = etudiantRows[0].id;
+        }
+
         const [rows] = await connection.execute(`
             SELECT 
                 rs.id,
-                rs.salle,
-                rs.niveau,
+                rs.annee,
                 rs.createdAt,
                 e.nom AS ecole_nom
             FROM responsables_salle rs
             INNER JOIN ecoles e ON rs.ecoleId = e.id
             WHERE rs.etudiantId = ? AND rs.ecoleId = ?
-        `, [studentId, ecoleId]);
+        `, [etudiantId, ecoleId]);
 
         res.status(200).json({
             success: true,
             isResponsable: rows.length > 0,
-            salles: rows
+            details: rows
         });
 
     } catch (error) {
