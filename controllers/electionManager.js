@@ -160,15 +160,36 @@ async function getAllElections() {
     try {
         console.log('🔍 getAllElections - Début requête');
 
-        // Utiliser pool.execute() comme dans getAllEcoles qui fonctionne
         const [rows] = await pool.execute(`
             SELECT 
-                e.*
+                e.id, e.type, e.titre, e.description,
+                e.dateDebut, e.dateFin, e.dateDebutCandidature, e.dateFinCandidature,
+                e.filiereId, f.nom AS filiere,
+                e.annee, e.ecoleId, ec.nom AS ecole,
+                e.niveau, e.delegueType, e.isActive, e.createdAt,
+                (SELECT COUNT(*) FROM candidates c WHERE c.electionId = e.id AND c.statut = 'APPROUVE') AS nb_candidats,
+                (SELECT COUNT(*) FROM votes v WHERE v.electionId = e.id) AS nb_votes,
+                CASE 
+                    WHEN (SELECT COUNT(*) FROM etudiants WHERE 
+                        (e.type = 'SALLE' AND filiereId = e.filiereId AND annee = e.annee AND ecoleId = e.ecoleId)
+                        OR (e.type = 'ECOLE' AND ecoleId = e.ecoleId)
+                        OR (e.type = 'UNIVERSITE')
+                    ) > 0 THEN
+                        ROUND((SELECT COUNT(*) FROM votes v WHERE v.electionId = e.id) * 100.0 / 
+                        (SELECT COUNT(*) FROM etudiants WHERE 
+                            (e.type = 'SALLE' AND filiereId = e.filiereId AND annee = e.annee AND ecoleId = e.ecoleId)
+                            OR (e.type = 'ECOLE' AND ecoleId = e.ecoleId)
+                            OR (e.type = 'UNIVERSITE')
+                        ), 2)
+                    ELSE 0
+                END AS participation_rate
             FROM elections e
+            LEFT JOIN filieres f ON f.id = e.filiereId
+            LEFT JOIN ecoles ec ON ec.id = e.ecoleId
             ORDER BY e.createdAt DESC
         `);
 
-        console.log(`✅ getAllElections - ${rows.length} élections trouvées (brutes)`);
+        console.log(`✅ getAllElections - ${rows.length} élections trouvées avec stats`);
         return rows;
     } catch (error) {
         console.error('Erreur lors de la récupération des élections:', error);
