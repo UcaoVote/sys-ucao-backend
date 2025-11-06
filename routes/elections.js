@@ -29,22 +29,6 @@ router.get('/voting', authenticateToken, async (req, res) => {
 });
 
 
-// Route de test simple
-router.get('/test-direct', async (req, res) => {
-    try {
-        console.log('🧪 TEST DIRECT elections');
-        const pool = (await import('../database/dbconfig.js')).default;
-        const connection = await pool.getConnection();
-        const [rows] = await connection.query('SELECT * FROM elections');
-        connection.release();
-        console.log('✅ TEST DIRECT:', rows.length, 'élections');
-        res.json({ success: true, count: rows.length, data: rows });
-    } catch (error) {
-        console.error('❌ TEST DIRECT error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
 // Recuperer  toues les elections
 router.get('/', async (req, res) => {
     try {
