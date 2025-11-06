@@ -106,12 +106,6 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Gestion explicite des requetes OPTIONS (preflight CORS)
-app.options('*', (req, res) => {
-    console.log('OPTIONS preflight recue pour:', req.url);
-    res.status(200).end();
-});
-
 // Traitement periodique
 electionInitializer.startPeriodicProcessing();
 
